@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #11131a;
+      --panel: #1b1e29;
+      --panel-2: #232735;
+      --text: #e7e9f0;
+      --muted: #9aa0b4;
+      --accent: #6c8cff;
+      --accent-ink: #fff;
+      --border: #2c3142;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    header {
+      padding: 22px 20px 16px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #161925, #11131a);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .title { display: flex; align-items: baseline; gap: 12px; }
+    h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
+    .count { color: var(--muted); font-size: 13px; }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    input[type="search"], select {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 14px;
+      outline: none;
+    }
+    input[type="search"] { flex: 1 1 240px; min-width: 180px; }
+    input[type="search"]:focus, select:focus { border-color: var(--accent); }
+    main { padding: 16px 20px 60px; max-width: 1100px; margin: 0 auto; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card h3 { margin: 0; font-size: 15px; line-height: 1.3; word-break: break-word; }
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .badge {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .badge.console { color: var(--text); border-color: var(--accent); }
+    .notes { color: var(--muted); font-size: 13px; }
+    .spacer { flex: 1; }
+    .download {
+      display: inline-block;
+      text-align: center;
+      text-decoration: none;
+      background: var(--accent);
+      color: var(--accent-ink);
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .download:hover { filter: brightness(1.08); }
+    .state { color: var(--muted); padding: 40px 0; text-align: center; }
+    .error { color: #ff8a8a; }
+    a.plain { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>🎮 Game Library</h1>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="controls">
+      <input type="search" id="search" placeholder="Search by title or filename…" autocomplete="off">
+      <select id="console"><option value="">All consoles</option></select>
+    </div>
+  </header>
+
+  <main>
+    <div id="state" class="state">Loading library…</div>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  <script>
+    var ALL = [];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    // Iconic hues for well-known platforms; everything else (incl. consoles you
+    // type in by hand) gets a stable hue hashed from its name, so colors are
+    // consistent across reloads without needing to maintain a full list.
+    var CONSOLE_HUES = {
+      'Game Boy': 75, 'Game Boy Color': 330, 'Game Boy Advance': 265,
+      'Nintendo DS': 205, 'Nintendo 3DS': 350,
+      'NES': 5, 'Famicom Disk System': 40, 'SNES': 280,
+      'Nintendo 64': 130, 'GameCube': 250, 'Wii': 195,
+      'Sega Master System': 220, 'Game Gear': 235, 'Sega Genesis': 215,
+      'Sega 32X': 185, 'Sega Dreamcast': 25,
+      'PlayStation': 240, 'PSP': 290,
+      'Atari 2600': 15, 'Atari 7800': 300, 'Atari Lynx': 45,
+      'Neo Geo Pocket': 160, 'Neo Geo Pocket Color': 30,
+      'TurboGrafx-16': 18, 'WonderSwan': 210, 'WonderSwan Color': 165
+    };
+
+    function consoleHue(name) {
+      if (CONSOLE_HUES.hasOwnProperty(name)) { return CONSOLE_HUES[name]; }
+      var h = 0;
+      for (var i = 0; i < name.length; i++) {
+        h = (h * 31 + name.charCodeAt(i)) % 360;
+      }
+      return h;
+    }
+
+    function consoleBadgeHtml(name) {
+      var h = consoleHue(name);
+      var style = 'color:hsl(' + h + ',70%,74%);' +
+        'border-color:hsl(' + h + ',60%,52%);' +
+        'background:hsla(' + h + ',65%,50%,0.16)';
+      return '<span class="badge console" style="' + style + '">' + escapeHtml(name) + '</span>';
+    }
+
+    function render() {
+      var q = document.getElementById('search').value.trim().toLowerCase();
+      var con = document.getElementById('console').value;
+      var grid = document.getElementById('grid');
+      var state = document.getElementById('state');
+
+      var rows = ALL.filter(function (g) {
+        if (con && g.console !== con) return false;
+        if (q && (g.title + ' ' + g.fileName).toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+
+      document.getElementById('count').textContent =
+        rows.length + ' of ' + ALL.length + ' game' + (ALL.length === 1 ? '' : 's');
+
+      if (rows.length === 0) {
+        grid.innerHTML = '';
+        state.textContent = ALL.length === 0
+          ? 'No games yet. Run "Game Library ▸ Scan Drive folder" in the spreadsheet.'
+          : 'No games match your filters.';
+        state.style.display = 'block';
+        return;
+      }
+      state.style.display = 'none';
+
+      grid.innerHTML = rows.map(function (g) {
+        var consoleBadge = g.console
+          ? consoleBadgeHtml(g.console)
+          : '<span class="badge">Unknown console</span>';
+        var sizeBadge = g.size ? '<span class="badge">' + escapeHtml(g.size) + '</span>' : '';
+        var notes = g.notes ? '<div class="notes">' + escapeHtml(g.notes) + '</div>' : '';
+        return '' +
+          '<div class="card">' +
+            '<h3>' + escapeHtml(g.title || g.fileName) + '</h3>' +
+            '<div class="meta">' + consoleBadge + sizeBadge + '</div>' +
+            notes +
+            '<div class="spacer"></div>' +
+            '<a class="download" href="' + escapeHtml(g.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
+          '</div>';
+      }).join('');
+    }
+
+    function populateConsoles() {
+      var sel = document.getElementById('console');
+      var seen = {};
+      ALL.forEach(function (g) { if (g.console) seen[g.console] = true; });
+      Object.keys(seen).sort().forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        sel.appendChild(opt);
+      });
+    }
+
+    function onLoaded(games) {
+      ALL = games || [];
+      populateConsoles();
+      render();
+    }
+
+    function onError(err) {
+      var state = document.getElementById('state');
+      state.className = 'state error';
+      state.textContent = 'Failed to load library: ' + (err && err.message ? err.message : err);
+    }
+
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('console').addEventListener('change', render);
+
+    google.script.run.withSuccessHandler(onLoaded).withFailureHandler(onError).getGames();
+  </script>
+</body>
+</html>
