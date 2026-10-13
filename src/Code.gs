@@ -112,26 +112,27 @@ function include(filename) {
 }
 
 /**
- * Returns all games for the web app as an array of plain objects, plus a
- * direct download URL for each. Called from the client via google.script.run.
+ * Returns the library for the web app: { games, access }. Each game is a plain
+ * object with a direct download URL; access says what this visitor may do (see
+ * getAccess_). Called from the client via google.script.run.
+ *
+ * The web app runs as the visitor, so this fails for anyone the spreadsheet
+ * isn't shared with — the client shows that as a "no access" message.
  */
 function getGames() {
   var sheet = getOrCreateSheet_();
   var values = sheet.getDataRange().getValues();
+  var access = getAccess_();
   if (values.length < 2) {
-    return [];
+    return { games: [], access: access };
   }
 
-  var header = values[0];
-  var idx = {};
-  header.forEach(function (name, i) { idx[name] = i; });
-
+  var idx = headerIndex_(values[0]);
   var covers = getCoverIndex_();
   var fresh = false;
   var games = [];
   for (var r = 1; r < values.length; r++) {
-    var row = values[r];
-    var fileId = row[idx.FileId];
+    var fileId = values[r][idx.FileId];
     if (!fileId) {
       continue;
     }
@@ -140,39 +141,89 @@ function getGames() {
       covers = getCoverIndex_(true);
       fresh = true;
     }
-    var da = row[idx.DateAdded];
-    var rd = row[idx.ReleaseDate];
-    games.push({
-      fileId: String(fileId),
-      title: String(row[idx.Title] || ''),
-      console: String(row[idx.Console] || ''),
-      fileName: String(row[idx.FileName] || ''),
-      size: String(row[idx.Size] || ''),
-      dateAdded: (da instanceof Date ? da.getTime() : new Date(da).getTime()) || 0,
-      notes: String(row[idx.Notes] || ''),
-      developer: String(row[idx.Developer] || ''),
-      publisher: String(row[idx.Publisher] || ''),
-      // Sheets turns typed dates into Dates (and a bare year into a number).
-      releaseDate: rd instanceof Date
-        ? Utilities.formatDate(rd, Session.getScriptTimeZone(), 'yyyy-MM-dd')
-        : String(rd || ''),
-      genre: String(row[idx.Genre] || ''),
-      players: String(row[idx.Players] || ''),
-      credits: String(row[idx.Credits] || ''),
-      description: String(row[idx.Description] || ''),
-      hasCover: !!covers[fileId],
-      downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
-    });
+    games.push(gameFromRow_(values[r], idx, covers));
   }
-  return games;
+  return { games: games, access: access };
+}
+
+/** Header labels → column index (0-based). */
+function headerIndex_(header) {
+  var idx = {};
+  header.forEach(function (name, i) { idx[name] = i; });
+  return idx;
+}
+
+/** One sheet row as the game object the web app renders. */
+function gameFromRow_(row, idx, covers) {
+  var fileId = String(row[idx.FileId]);
+  var da = row[idx.DateAdded];
+  var rd = row[idx.ReleaseDate];
+  return {
+    fileId: fileId,
+    title: String(row[idx.Title] || ''),
+    console: String(row[idx.Console] || ''),
+    fileName: String(row[idx.FileName] || ''),
+    size: String(row[idx.Size] || ''),
+    dateAdded: (da instanceof Date ? da.getTime() : new Date(da).getTime()) || 0,
+    notes: String(row[idx.Notes] || ''),
+    developer: String(row[idx.Developer] || ''),
+    publisher: String(row[idx.Publisher] || ''),
+    // Sheets turns typed dates into Dates (and a bare year into a number).
+    releaseDate: rd instanceof Date
+      ? Utilities.formatDate(rd, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      : String(rd || ''),
+    genre: String(row[idx.Genre] || ''),
+    players: String(row[idx.Players] || ''),
+    credits: String(row[idx.Credits] || ''),
+    description: String(row[idx.Description] || ''),
+    hasCover: !!covers[fileId],
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
+  };
+}
+
+// ----- Access ----------------------------------------------------------------
+
+/**
+ * What the visitor may do, straight from Drive's sharing — the app only
+ * reflects it, Drive and Sheets enforce it. Links are null when the visitor
+ * can't open them.
+ */
+function getAccess_() {
+  var ssId = SpreadsheetApp.getActiveSpreadsheet().getId();
+  var roms = driveCapabilities_(ROMS_FOLDER_ID);
+  var assets = driveCapabilities_(ASSETS_FOLDER_ID);
+  var sheet = driveCapabilities_(ssId);
+  return {
+    folderUrl: roms ? 'https://drive.google.com/drive/folders/' + ROMS_FOLDER_ID : null,
+    sheetUrl: sheet ? 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit' : null,
+    canUploadGames: !!(roms && roms.canAddChildren && sheet && sheet.canEdit),
+    canUploadCovers: !!(assets && assets.canAddChildren)
+  };
+}
+
+/**
+ * The visitor's Drive capabilities on a file or folder, or null if they can't
+ * see it at all.
+ */
+function driveCapabilities_(id) {
+  var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id +
+    '?fields=capabilities(canAddChildren,canEdit)&supportsAllDrives=true', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    return null;
+  }
+  return JSON.parse(res.getContentText()).capabilities || {};
 }
 
 /**
  * Returns cover images for the given ROM file ids as { romId: dataUrl }.
  * Called from the client via google.script.run.
  *
- * Takes ROM ids, never raw Drive ids: the web app runs as the owner and is open
- * to anyone, so it must only ever serve files that are in the Assets folder.
+ * Takes ROM ids, never raw Drive ids, so it only ever serves files from the
+ * Assets folder. (The web app runs as the visitor, but the cover cache is shared
+ * across visitors.)
  */
 function getCovers(romIds) {
   var covers = getCoverIndex_();
@@ -222,7 +273,12 @@ function getCoverIndex_(refresh) {
     return JSON.parse(cached);
   }
   var index = {};
-  var files = DriveApp.getFolderById(ASSETS_FOLDER_ID).getFiles();
+  var files;
+  try {
+    files = DriveApp.getFolderById(ASSETS_FOLDER_ID).getFiles();
+  } catch (e) {
+    return index; // The visitor can't see the Assets folder — no covers, not a failed load.
+  }
   while (files.hasNext()) {
     var file = files.next();
     var m = /^(.+)\.(png|jpe?g|gif|webp)$/i.exec(file.getName());
@@ -254,8 +310,12 @@ function getOrCreateSheet_() {
   var header = getHeader_(sheet);
   var missing = COLUMNS.filter(function (col) { return header.indexOf(col) < 0; });
   if (missing.length > 0) {
-    sheet.getRange(1, header.length + 1, 1, missing.length)
-      .setValues([missing]).setFontWeight('bold');
+    try {
+      sheet.getRange(1, header.length + 1, 1, missing.length)
+        .setValues([missing]).setFontWeight('bold');
+    } catch (e) {
+      // A view-only visitor can't migrate the sheet; the next editor run will.
+    }
   }
   return sheet;
 }

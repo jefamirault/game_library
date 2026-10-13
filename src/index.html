@@ -213,6 +213,38 @@
     .state { color: var(--muted); padding: 40px 0; text-align: center; }
     .error { color: #ff8a8a; }
     a.plain { color: var(--accent); }
+    .links { margin-left: auto; display: flex; gap: 14px; align-items: baseline; font-size: 13px; }
+    .links a { color: var(--muted); text-decoration: none; }
+    .links a:hover { color: var(--accent); }
+    .links button { padding: 5px 10px; font-size: 13px; }
+    @media (max-width: 520px) { .links { margin-left: 0; } .title { flex-wrap: wrap; } }
+    .cover-upload { margin-top: 8px; padding: 6px 10px; font-size: 13px; width: 150px; }
+    .cover-col { flex: 0 0 auto; width: 150px; display: flex; flex-direction: column; }
+    .cover-col .detail-cover { flex: 0 0 150px; width: 150px; }
+    .upload-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .upload-body h2 { margin: 0; font-size: 20px; padding-right: 28px; }
+    .upload-body p { margin: 0; }
+    .upload-item {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .upload-item .file { grid-column: 1 / -1; font-size: 13px; color: var(--muted); word-break: break-all; }
+    .upload-item label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+    .upload-item input { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 14px; }
+    .upload-item progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: var(--accent); }
+    .upload-item .status { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+    .upload-item .status.warn { color: #ffcf7a; }
+    .upload-item .status.error { color: #ff8a8a; }
+    .upload-item .status.done { color: #8fe3a4; }
+    @media (max-width: 520px) { .upload-item { grid-template-columns: 1fr; } }
+    .upload-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    button.download { border: 0; }
+    button.download:disabled { opacity: .5; cursor: default; }
   </style>
 </head>
 <body>
@@ -220,6 +252,7 @@
     <div class="title">
       <h1>🎮 Game Library</h1>
       <span class="count" id="count"></span>
+      <span class="links" id="links"></span>
     </div>
     <div class="controls">
       <input type="search" id="search" placeholder="Search… (try c:gba year<2000 g:platform)" autocomplete="off">
@@ -268,11 +301,33 @@
 
   <dialog id="details" aria-labelledby="details-title"></dialog>
 
+  <dialog id="upload" aria-labelledby="upload-title">
+    <div class="detail">
+      <button type="button" class="close" aria-label="Close">✕</button>
+      <div class="upload-body">
+        <h2 id="upload-title">Add games</h2>
+        <p class="notes">ROM files go into the shared Drive folder and get a row in the spreadsheet. Title and console are guessed from the file name — fix them here or later in the sheet.</p>
+        <input type="file" id="rom-files" multiple>
+        <div id="upload-list"></div>
+        <div class="upload-actions">
+          <button type="button" class="download" id="upload-start" disabled>Upload</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+  <datalist id="console-list"></datalist>
+  <input type="file" id="cover-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+
   <script>
     var ALL = [];
     var dirAsc = true;
     var COVERS = {};         // ROM file id → image data URL (null if it failed), filled in as batches arrive
     var COVER_BATCH = 8;     // covers per server call
+    var ACCESS = {};         // what this visitor may do (getAccess_ in Code.gs)
+    // Extension → console guesses, shared with the folder scan (Setup.gs).
+    var EXT_CONSOLES = <?!= JSON.stringify(EXTENSION_TO_CONSOLE) ?>;
+    var ROM_EXTS = <?!= JSON.stringify(Object.keys(EXTENSION_TO_CONSOLE).concat(Object.keys(AMBIGUOUS_EXTENSIONS))) ?>;
+    var MAX_COVER_BYTES = <?!= MAX_COVER_BYTES ?>;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -406,12 +461,13 @@
     }
 
     function coverHtml(g) {
+      var details = ' data-details="' + escapeHtml(g.fileId) + '"';
       if (!g.hasCover) {
-        return '<div class="cover none">No cover</div>';
+        return '<div class="cover none"' + details + '>No cover</div>';
       }
       var src = COVERS[g.fileId];
       if (src === null) {
-        return '<div class="cover none">Cover unavailable</div>';
+        return '<div class="cover none"' + details + '>Cover unavailable</div>';
       }
       return '<div class="cover" data-cover="' + escapeHtml(g.fileId) + '" data-details="' + escapeHtml(g.fileId) + '">' +
         (src ? '<img src="' + src + '" alt="" loading="lazy">' : '<div class="spinner"></div>') + '</div>';
@@ -665,7 +721,13 @@
         '<div class="detail">' +
           '<button type="button" class="close" aria-label="Close">✕</button>' +
           '<div class="detail-top">' +
-            '<div class="detail-cover" data-cover="' + escapeHtml(g.fileId) + '">' + cover + '</div>' +
+            '<div class="cover-col">' +
+              '<div class="detail-cover" data-cover="' + escapeHtml(g.fileId) + '">' + cover + '</div>' +
+              (ACCESS.canUploadCovers
+                ? '<button type="button" class="cover-upload" data-upload-cover="' + escapeHtml(g.fileId) + '">' +
+                  (g.hasCover ? 'Replace cover' : 'Upload cover') + '</button>'
+                : '') +
+            '</div>' +
             '<div class="detail-head">' +
               '<h2 id="details-title">' + escapeHtml(g.title || g.fileName) + '</h2>' +
               '<div class="meta">' +
@@ -688,8 +750,8 @@
 
     // Plays the closing animation, then actually closes the dialog.
     var CLOSE_MS = 160;
-    function closeDetails() {
-      var dlg = document.getElementById('details');
+    function closeDetails() { closeDialog(document.getElementById('details')); }
+    function closeDialog(dlg) {
       if (!dlg.open || dlg.classList.contains('closing')) { return; }
       dlg.classList.add('closing');
       setTimeout(function () {
@@ -733,19 +795,47 @@
       });
     }
 
+    // Fills the console filter (and the upload form's suggestions). Safe to
+    // re-run after games are added; keeps the current selection.
     function populateConsoles() {
       var sel = document.getElementById('console');
+      var current = sel.value;
       var seen = {};
       ALL.forEach(function (g) { if (g.console) seen[g.console] = true; });
+      sel.length = 1;
       Object.keys(seen).sort().forEach(function (c) {
         var opt = document.createElement('option');
         opt.value = c; opt.textContent = c;
         sel.appendChild(opt);
       });
+      sel.value = current;
+
+      var known = Object.assign({}, seen);
+      Object.keys(EXT_CONSOLES).forEach(function (e) { known[EXT_CONSOLES[e]] = true; });
+      document.getElementById('console-list').innerHTML = Object.keys(known).sort()
+        .map(function (c) { return '<option value="' + escapeHtml(c) + '">'; }).join('');
     }
 
-    function onLoaded(games) {
-      ALL = games || [];
+    function renderLinks() {
+      var html = [];
+      if (ACCESS.folderUrl) {
+        html.push('<a href="' + escapeHtml(ACCESS.folderUrl) + '" target="_blank" rel="noopener">📁 Drive folder</a>');
+      }
+      if (ACCESS.sheetUrl) {
+        html.push('<a href="' + escapeHtml(ACCESS.sheetUrl) + '" target="_blank" rel="noopener">📊 Spreadsheet</a>');
+      }
+      if (ACCESS.canUploadGames) {
+        html.push('<button type="button" id="add-games">＋ Add games</button>');
+      }
+      document.getElementById('links').innerHTML = html.join('');
+      var add = document.getElementById('add-games');
+      if (add) { add.addEventListener('click', openUpload); }
+    }
+
+    function onLoaded(res) {
+      ALL = (res && res.games) || [];
+      ACCESS = (res && res.access) || {};
+      renderLinks();
       populateConsoles();
       render();
       loadCovers();
@@ -753,9 +843,196 @@
 
     function onError(err) {
       var state = document.getElementById('state');
+      var msg = err && err.message ? err.message : String(err);
       state.className = 'state error';
-      state.textContent = 'Failed to load library: ' + (err && err.message ? err.message : err);
+      state.textContent = /permission|access|not found/i.test(msg)
+        ? 'You don\'t have access to this library. Ask the owner to share the Game Library spreadsheet and Drive folder with your Google account.'
+        : 'Failed to load library: ' + msg;
     }
+
+    // google.script.run as a promise.
+    function run(fn) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+        r[fn].apply(r, args);
+      });
+    }
+
+    function errText(err) { return err && err.message ? err.message : String(err); }
+
+    // ----- Cover upload ------------------------------------------------------
+
+    function pickCover(id) {
+      var input = document.getElementById('cover-file');
+      input.setAttribute('data-rom', id);
+      input.value = '';
+      input.click();
+    }
+
+    document.getElementById('cover-file').addEventListener('change', function () {
+      var id = this.getAttribute('data-rom');
+      var file = this.files[0];
+      var btn = document.querySelector('[data-upload-cover="' + CSS.escape(id) + '"]');
+      if (!file) { return; }
+      if (file.size > MAX_COVER_BYTES) {
+        alert('Covers must be 5 MB or smaller.');
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+      var reader = new FileReader();
+      reader.onload = function () {
+        run('uploadCover', id, reader.result).then(function (url) {
+          var g = ALL.filter(function (x) { return x.fileId === id; })[0];
+          if (g) { g.hasCover = true; }
+          COVERS[id] = url;
+          render();
+          var batch = {};
+          batch[id] = url;
+          onCovers([id], batch);
+          if (btn) { btn.disabled = false; btn.textContent = 'Replace cover'; }
+        }, function (err) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Upload failed — try again'; }
+          alert('Cover upload failed: ' + errText(err));
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // ----- Game upload -------------------------------------------------------
+
+    var PENDING = [];  // { file, el } for each file picked in the upload dialog
+
+    function openUpload() {
+      var dlg = document.getElementById('upload');
+      document.getElementById('rom-files').value = '';
+      document.getElementById('rom-files').disabled = false;
+      PENDING = [];
+      document.getElementById('upload-list').innerHTML = '';
+      document.getElementById('upload-start').disabled = true;
+      dlg.classList.remove('closing');
+      dlg.showModal();
+    }
+
+    function fileExt(name) {
+      var dot = name.lastIndexOf('.');
+      return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
+    }
+
+    // Mirrors titleFromFilename_ in Setup.gs.
+    function titleFromFilename(name) {
+      var base = name;
+      var dot = base.lastIndexOf('.');
+      if (dot > 0) { base = base.substring(0, dot); }
+      base = base.replace(/[_\.]+/g, ' ');
+      base = base.replace(/\s*[\(\[][^\)\]]*[\)\]]/g, ' ');
+      return base.replace(/\s+/g, ' ').trim();
+    }
+
+    // Mirrors humanSize_ in Setup.gs.
+    function humanSize(bytes) {
+      var units = ['B', 'KB', 'MB', 'GB'], i = 0, n = bytes;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
+    }
+
+    document.getElementById('rom-files').addEventListener('change', function () {
+      var list = document.getElementById('upload-list');
+      PENDING = Array.prototype.map.call(this.files, function (file) {
+        var el = document.createElement('div');
+        el.className = 'upload-item';
+        var ok = ROM_EXTS.indexOf(fileExt(file.name)) >= 0;
+        var dup = ALL.some(function (g) { return g.fileName === file.name; });
+        el.innerHTML = '' +
+          '<div class="file">' + escapeHtml(file.name) + ' · ' + humanSize(file.size) + '</div>' +
+          '<label>Title<input type="text" class="u-title" value="' + escapeHtml(titleFromFilename(file.name)) + '"></label>' +
+          '<label>Console<input type="text" class="u-console" list="console-list" placeholder="Unknown" value="' +
+            escapeHtml(EXT_CONSOLES[fileExt(file.name)] || '') + '"></label>' +
+          '<progress max="1" value="0" hidden></progress>' +
+          '<div class="status' + (!ok ? ' error' : dup ? ' warn' : '') + '">' +
+            (!ok ? 'Not a ROM file type this library knows — it will be skipped.'
+              : dup ? 'A file with this name is already in the library — uploading adds a second copy.' : '') +
+          '</div>';
+        return { file: file, el: el, ok: ok };
+      });
+      list.innerHTML = '';
+      PENDING.forEach(function (p) { list.appendChild(p.el); });
+      document.getElementById('upload-start').disabled =
+        !PENDING.some(function (p) { return p.ok; });
+    });
+
+    document.getElementById('upload-start').addEventListener('click', function () {
+      var btn = this;
+      btn.disabled = true;
+      document.getElementById('rom-files').disabled = true;
+      var todo = PENDING.filter(function (p) { return p.ok; });
+      // One file at a time, so progress is easy to follow and Drive isn't swamped.
+      todo.reduce(function (chain, p) {
+        return chain.then(function () { return uploadRom(p); });
+      }, Promise.resolve()).then(function () {
+        document.getElementById('rom-files').disabled = false;
+        // Failed files stay pending, so Upload retries just those; once
+        // everything is in, the dialog closes and the new cards are showing.
+        var left = PENDING.some(function (p) { return p.ok; });
+        btn.disabled = !left;
+        if (!left) { setTimeout(function () { closeDialog(uploadDlg); }, 800); }
+      });
+    });
+
+    function uploadRom(p) {
+      var status = p.el.querySelector('.status');
+      var bar = p.el.querySelector('progress');
+      var title = p.el.querySelector('.u-title').value;
+      var consoleName = p.el.querySelector('.u-console').value;
+      function setStatus(text, cls) { status.className = 'status' + (cls ? ' ' + cls : ''); status.textContent = text; }
+      bar.hidden = false;
+      setStatus('Starting…');
+      return run('startRomUpload', p.file.name, p.file.size, p.file.type, location.origin)
+        .then(function (sessionUrl) {
+          setStatus('Uploading…');
+          return putFile(sessionUrl, p.file, function (frac) { bar.value = frac; });
+        })
+        .then(function (driveFile) {
+          setStatus('Adding to the library…');
+          return run('finishRomUpload', driveFile.id, title, consoleName);
+        })
+        .then(function (game) {
+          bar.value = 1;
+          setStatus('Added ✓', 'done');
+          p.ok = false;  // don't upload it again
+          ALL.push(game);
+          populateConsoles();
+          render();
+        }, function (err) {
+          setStatus('Failed: ' + errText(err), 'error');
+        });
+    }
+
+    // Sends the file to a Drive resumable-upload session in one PUT (the
+    // browser streams it from disk). Resolves with Drive's file resource.
+    function putFile(url, file, onProgress) {
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('PUT', url);
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) { onProgress(e.loaded / e.total); }
+        };
+        xhr.onload = function () {
+          if (xhr.status === 200 || xhr.status === 201) {
+            try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(e); }
+          } else {
+            reject(new Error('Drive upload failed (' + xhr.status + '): ' + xhr.responseText));
+          }
+        };
+        xhr.onerror = function () { reject(new Error('Network error while uploading to Drive.')); };
+        xhr.send(file);
+      });
+    }
+
+    var uploadDlg = document.getElementById('upload');
+    uploadDlg.querySelector('.close').addEventListener('click', function () { closeDialog(uploadDlg); });
+    uploadDlg.addEventListener('cancel', function (e) { e.preventDefault(); closeDialog(uploadDlg); });
+    uploadDlg.addEventListener('click', function (e) { if (e.target === this) { closeDialog(uploadDlg); } });
 
     document.getElementById('grid').addEventListener('click', function (e) {
       var chip = e.target.closest('[data-console]');
@@ -765,6 +1042,8 @@
     });
     // Clicking the backdrop (the dialog element itself, outside its content) closes it.
     document.getElementById('details').addEventListener('click', function (e) {
+      var up = e.target.closest('[data-upload-cover]');
+      if (up) { pickCover(up.getAttribute('data-upload-cover')); return; }
       var chip = e.target.closest('[data-console]');
       if (chip) {
         addConsoleFilter(chip.getAttribute('data-console'));

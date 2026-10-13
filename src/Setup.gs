@@ -95,21 +95,7 @@ function setupDatabase() {
       skipped++;
       return;
     }
-    var ext = fileExtension_(f.name);
-    var consoleName = EXTENSION_TO_CONSOLE[ext] || '';
-    var row = [];
-    header.forEach(function (col) {
-      switch (col) {
-        case 'FileId': row.push(f.id); break;
-        case 'Title': row.push(titleFromFilename_(f.name)); break;
-        case 'Console': row.push(consoleName); break;
-        case 'FileName': row.push(f.name); break;
-        case 'Size': row.push(humanSize_(f.size)); break;
-        case 'DateAdded': row.push(now); break;
-        default: row.push(''); // Notes, game info and any future columns start blank
-      }
-    });
-    newRows.push(row);
+    newRows.push(romRow_(header, f, now));
   });
 
   if (newRows.length > 0) {
@@ -128,6 +114,27 @@ function setupDatabase() {
     'Games with a cover image: ' + covered + '\n\n' +
     'Tip: review the Console column — ambiguous formats (.iso, .bin, .zip, …) ' +
     'are left blank for you to fill in.');
+}
+
+/**
+ * A new sheet row for a ROM file ({ id, name, size }), in the sheet's header
+ * order. Title and Console are guessed from the filename unless overrides
+ * gives them (the web app's upload form does).
+ */
+function romRow_(header, f, now, overrides) {
+  overrides = overrides || {};
+  var consoleName = overrides.console || EXTENSION_TO_CONSOLE[fileExtension_(f.name)] || '';
+  return header.map(function (col) {
+    switch (col) {
+      case 'FileId': return f.id;
+      case 'Title': return overrides.title || titleFromFilename_(f.name);
+      case 'Console': return consoleName;
+      case 'FileName': return f.name;
+      case 'Size': return humanSize_(f.size);
+      case 'DateAdded': return now;
+      default: return ''; // Notes, game info and any future columns start blank
+    }
+  });
 }
 
 /**
