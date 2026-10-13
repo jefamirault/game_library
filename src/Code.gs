@@ -38,7 +38,15 @@ var COLUMNS = [
   'FileName',   // Original filename in Drive
   'Size',       // Human-readable file size
   'DateAdded',  // When the row was first added by setup
-  'Notes'       // Free-form, for the user
+  'Notes',      // Free-form, for the user
+  // Game info — filled from GAME_INFO (GameInfo.gs) where blank; edit freely.
+  'Developer',
+  'Publisher',
+  'ReleaseDate', // YYYY-MM-DD, YYYY-MM or YYYY
+  'Genre',
+  'Players',
+  'Credits',     // One "Role: Names" per line
+  'Description'  // A paragraph about the game
 ];
 
 // ----- Spreadsheet menu ------------------------------------------------------
@@ -51,6 +59,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Game Library')
     .addItem('Scan Drive folder → update database', 'setupDatabase')
+    .addItem('Fill in game info (blank cells only)', 'fillGameInfo')
     .addSeparator()
     .addItem('Open web app URL', 'showWebAppUrl')
     .addToUi();
@@ -130,6 +139,7 @@ function getGames() {
       fresh = true;
     }
     var da = row[idx.DateAdded];
+    var rd = row[idx.ReleaseDate];
     games.push({
       fileId: String(fileId),
       title: String(row[idx.Title] || ''),
@@ -138,6 +148,16 @@ function getGames() {
       size: String(row[idx.Size] || ''),
       dateAdded: (da instanceof Date ? da.getTime() : new Date(da).getTime()) || 0,
       notes: String(row[idx.Notes] || ''),
+      developer: String(row[idx.Developer] || ''),
+      publisher: String(row[idx.Publisher] || ''),
+      // Sheets turns typed dates into Dates (and a bare year into a number).
+      releaseDate: rd instanceof Date
+        ? Utilities.formatDate(rd, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(rd || ''),
+      genre: String(row[idx.Genre] || ''),
+      players: String(row[idx.Players] || ''),
+      credits: String(row[idx.Credits] || ''),
+      description: String(row[idx.Description] || ''),
       hasCover: !!covers[fileId],
       downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
     });
@@ -205,7 +225,10 @@ function getCoverIndex_(refresh) {
 
 // ----- Sheet helpers ---------------------------------------------------------
 
-/** Returns the Games sheet, creating it with a header row if missing. */
+/**
+ * Returns the Games sheet, creating it with a header row if missing. Columns
+ * added to COLUMNS since the sheet was made are appended to its header.
+ */
 function getOrCreateSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAME);
@@ -215,6 +238,22 @@ function getOrCreateSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, COLUMNS.length).setValues([COLUMNS]).setFontWeight('bold');
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  var header = getHeader_(sheet);
+  var missing = COLUMNS.filter(function (col) { return header.indexOf(col) < 0; });
+  if (missing.length > 0) {
+    sheet.getRange(1, header.length + 1, 1, missing.length)
+      .setValues([missing]).setFontWeight('bold');
   }
   return sheet;
+}
+
+/** The sheet's header row as an array of labels (trailing blanks dropped). */
+function getHeader_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) { return []; }
+  var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  while (header.length && !header[header.length - 1]) { header.pop(); }
+  return header;
 }

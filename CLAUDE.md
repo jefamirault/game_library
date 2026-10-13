@@ -27,7 +27,7 @@ There is no build, lint, or test tooling — source pushes as-is.
 
 ## Architecture
 
-Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers:
+Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers, plus a data file:
 
 1. **`Setup.gs` — database population.** `setupDatabase()` recursively scans `ROMS_FOLDER_ID`, derives a Title from each filename, and guesses Console from the file extension via `EXTENSION_TO_CONSOLE`. Ambiguous container formats (`.iso`, `.bin`, `.zip`, …) are imported with a blank Console for the user to fill in. **Re-running is idempotent and additive:** rows are keyed by Drive `FileId`, so existing rows (and any manual edits to Console/Title/Notes) are never touched — only new files are appended.
 
@@ -35,9 +35,12 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers:
    - `COLUMNS` is the single source of truth for the sheet schema. Code reads/writes columns **by header label**, not by index, so the header row (row 1 of the `Games` sheet) must stay intact. Reorder columns only by editing `COLUMNS`.
    - `doGet()` serves `index.html`; `getGames()` is the client-callable bridge (`google.script.run`) returning game objects plus a Drive download URL.
    - `getCovers(romIds)` serves cover art from `ASSETS_FOLDER_ID` as data URLs (Drive thumbnails, cached in `CacheService`). Covers are named `<ROM FileId>.png`. It takes ROM ids, never raw Drive ids, so an anonymous caller can't read arbitrary files as the owner.
-   - `onOpen()` adds a **Game Library** spreadsheet menu (run setup, show web app URL).
+   - `onOpen()` adds a **Game Library** spreadsheet menu (run setup, fill game info, show web app URL).
+   - `getOrCreateSheet_()` appends any `COLUMNS` missing from an existing sheet's header, so adding a column to `COLUMNS` migrates the live sheet on the next run.
 
-3. **`index.html` — the browse/download UI.** Pure client-side rendering of the `getGames()` result with title/filename search and a per-console filter. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
+   **`GameInfo.gs` — reference metadata.** `GAME_INFO` maps ROM FileId → developer, publisher, release date, genre, players, credits and a description (sourced from Wikipedia infoboxes; North American dates for USA dumps). `fillGameInfo()` (menu item; also run at the end of `setupDatabase()`) copies it into the sheet's game info columns, **filling blank cells only** — the sheet wins once a value is there. New ROMs need a new `GAME_INFO` entry, or fill the sheet by hand.
+
+3. **`index.html` — the browse/download UI.** Pure client-side rendering of the `getGames()` result with search (title, filename, developer, publisher, genre, credits), a per-console filter, and sorting. Clicking a title or cover opens a details dialog with the game info. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
 
 ## Things that bite
 

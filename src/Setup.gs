@@ -85,6 +85,8 @@ function setupDatabase() {
   var folder = DriveApp.getFolderById(ROMS_FOLDER_ID);
   var files = collectFiles_(folder);
 
+  // Rows follow the sheet's own header order, which may differ from COLUMNS.
+  var header = getHeader_(sheet);
   var newRows = [];
   var skipped = 0;
   var now = new Date();
@@ -96,7 +98,7 @@ function setupDatabase() {
     var ext = fileExtension_(f.name);
     var consoleName = EXTENSION_TO_CONSOLE[ext] || '';
     var row = [];
-    COLUMNS.forEach(function (col) {
+    header.forEach(function (col) {
       switch (col) {
         case 'FileId': row.push(f.id); break;
         case 'Title': row.push(titleFromFilename_(f.name)); break;
@@ -104,24 +106,89 @@ function setupDatabase() {
         case 'FileName': row.push(f.name); break;
         case 'Size': row.push(humanSize_(f.size)); break;
         case 'DateAdded': row.push(now); break;
-        default: row.push(''); // Notes and any future columns start blank
+        default: row.push(''); // Notes, game info and any future columns start blank
       }
     });
     newRows.push(row);
   });
 
   if (newRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, COLUMNS.length)
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length)
       .setValues(newRows);
   }
 
-  var msg = 'Scan complete.\n\n' +
+  var filled = fillGameInfo_();
+
+  notify_('Scan complete.\n\n' +
     'Files found: ' + files.length + '\n' +
     'New games added: ' + newRows.length + '\n' +
-    'Already in database: ' + skipped + '\n\n' +
+    'Already in database: ' + skipped + '\n' +
+    'Game info cells filled: ' + filled + '\n\n' +
     'Tip: review the Console column — ambiguous formats (.iso, .bin, .zip, …) ' +
-    'are left blank for you to fill in.';
+    'are left blank for you to fill in.');
+}
 
+/**
+ * Sheet column → GAME_INFO field (GameInfo.gs) for the game info columns.
+ */
+var INFO_COLUMNS = {
+  Developer: 'developer',
+  Publisher: 'publisher',
+  ReleaseDate: 'released',
+  Genre: 'genre',
+  Players: 'players',
+  Credits: 'credits',
+  Description: 'description'
+};
+
+/**
+ * Menu entry point: fills blank game info cells from GAME_INFO. Never
+ * overwrites a cell that has a value, so edits made in the sheet stick.
+ */
+function fillGameInfo() {
+  var filled = fillGameInfo_();
+  notify_('Filled ' + filled + ' blank game info cell' + (filled === 1 ? '' : 's') +
+    ' from GameInfo.gs.\n\nGames missing from GameInfo.gs are left as they are.');
+}
+
+/** Does the work for fillGameInfo(); returns the number of cells filled. */
+function fillGameInfo_() {
+  var sheet = getOrCreateSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { return 0; }
+  var header = getHeader_(sheet);
+  var ids = sheet.getRange(2, header.indexOf('FileId') + 1, lastRow - 1, 1).getValues();
+
+  var filled = 0;
+  // One column at a time, so no other column is rewritten (formulas, dates).
+  header.forEach(function (col, c) {
+    var key = INFO_COLUMNS[col];
+    if (!key) { return; }
+    var range = sheet.getRange(2, c + 1, lastRow - 1, 1);
+    var values = range.getValues();
+    var changed = false;
+    values.forEach(function (cell, r) {
+      var info = GAME_INFO[String(ids[r][0])];
+      if (!info || cell[0] !== '') { return; }
+      var v = info[key];
+      if (Array.isArray(v)) { v = v.join('\n'); }
+      if (v) {
+        cell[0] = v;
+        changed = true;
+        filled++;
+      }
+    });
+    if (changed) {
+      // Keep partial dates like "1995" or "2004-06" as typed, not as Dates.
+      if (col === 'ReleaseDate') { range.setNumberFormat('@'); }
+      range.setValues(values);
+    }
+  });
+  return filled;
+}
+
+/** Shows a message in the spreadsheet UI when there is one, otherwise logs it. */
+function notify_(msg) {
   try {
     SpreadsheetApp.getUi().alert('Game Library', msg, SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (e) {

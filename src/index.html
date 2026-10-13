@@ -100,6 +100,94 @@
     }
     .badge.console { color: var(--text); border-color: var(--accent); }
     .notes { color: var(--muted); font-size: 13px; }
+    .byline { color: var(--muted); font-size: 13px; margin-top: -4px; }
+    .card h3 button { all: unset; cursor: pointer; }
+    .card h3 button:hover { color: var(--accent); }
+    .card h3 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cover[data-details] { cursor: pointer; }
+
+    dialog {
+      width: min(680px, calc(100vw - 32px));
+      max-height: calc(100vh - 48px);
+      padding: 0;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: auto;
+    }
+    dialog::backdrop { background: rgba(5, 6, 10, 0.72); }
+    /* Pop in from slightly below and smaller; closing (see closeDetails) reverses it. */
+    dialog[open] { animation: dialog-in .24s cubic-bezier(.2, .9, .3, 1.15); }
+    dialog[open]::backdrop { animation: backdrop-in .24s ease-out; }
+    dialog.closing { animation: dialog-out .16s ease-in forwards; }
+    dialog.closing::backdrop { animation: backdrop-out .16s ease-in forwards; }
+    @keyframes dialog-in {
+      from { opacity: 0; transform: translateY(16px) scale(.96); }
+    }
+    @keyframes dialog-out {
+      to { opacity: 0; transform: translateY(8px) scale(.97); }
+    }
+    @keyframes backdrop-in { from { opacity: 0; } }
+    @keyframes backdrop-out { to { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes dialog-in { from { opacity: 0; } }
+      @keyframes dialog-out { to { opacity: 0; } }
+    }
+    .detail { display: flex; flex-direction: column; }
+    .detail-top { display: flex; gap: 18px; padding: 20px 20px 0; }
+    .detail-cover {
+      flex: 0 0 150px;
+      height: 150px;
+      background: var(--panel-2);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .detail-cover img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .detail-head { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .detail-head h2 { margin: 0; font-size: 20px; line-height: 1.25; padding-right: 28px; }
+    .facts {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 3px 12px;
+      margin: 4px 0 0;
+      font-size: 13px;
+    }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; }
+    .detail-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .detail-body p { margin: 0; }
+    .detail-body h4 {
+      margin: 0 0 4px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+    }
+    .credits { margin: 0; padding: 0; list-style: none; font-size: 14px; }
+    .credits li { padding: 2px 0; }
+    .credits .role { color: var(--muted); }
+    .close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      line-height: 1;
+      font-size: 18px;
+    }
+    @media (max-width: 520px) {
+      .detail-top { flex-direction: column; align-items: center; text-align: center; }
+      .detail-head .meta { justify-content: center; }
+      .facts { text-align: left; }
+      .detail-head h2 { padding: 0 28px; }
+    }
     .spacer { flex: 1; }
     .download {
       display: inline-block;
@@ -125,11 +213,12 @@
       <span class="count" id="count"></span>
     </div>
     <div class="controls">
-      <input type="search" id="search" placeholder="Search by title or filename…" autocomplete="off">
+      <input type="search" id="search" placeholder="Search titles, developers, people…" autocomplete="off">
       <select id="console"><option value="">All consoles</option></select>
       <select id="sort">
         <option value="title">Sort: Title</option>
         <option value="console">Sort: Console</option>
+        <option value="released">Sort: Release Date</option>
         <option value="dateAdded">Sort: Date Added</option>
         <option value="size">Sort: Download Size</option>
       </select>
@@ -141,6 +230,8 @@
     <div id="state" class="state">Loading library…</div>
     <div class="grid" id="grid"></div>
   </main>
+
+  <dialog id="details" aria-labelledby="details-title"></dialog>
 
   <script>
     var ALL = [];
@@ -205,6 +296,10 @@
       if (key === 'console') {
         cmp = function (a, b) { return a.console.localeCompare(b.console); };
         missing = function (g) { return !g.console; };
+      } else if (key === 'released') {
+        // YYYY-MM-DD, YYYY-MM and YYYY all compare correctly as strings.
+        cmp = function (a, b) { return a.releaseDate.localeCompare(b.releaseDate); };
+        missing = function (g) { return !g.releaseDate; };
       } else if (key === 'dateAdded') {
         cmp = function (a, b) { return a.dateAdded - b.dateAdded; };
         missing = function (g) { return !g.dateAdded; };
@@ -232,7 +327,7 @@
 
       var rows = ALL.filter(function (g) {
         if (con && g.console !== con) return false;
-        if (q && (g.title + ' ' + g.fileName).toLowerCase().indexOf(q) === -1) return false;
+        if (q && searchText(g).indexOf(q) === -1) return false;
         return true;
       });
 
@@ -257,10 +352,14 @@
           : '<span class="badge">Unknown console</span>';
         var sizeBadge = g.size ? '<span class="badge">' + escapeHtml(g.size) + '</span>' : '';
         var notes = g.notes ? '<div class="notes">' + escapeHtml(g.notes) + '</div>' : '';
+        var by = [g.developer, releaseYear(g)].filter(Boolean).join(' · ');
+        var byline = by ? '<div class="byline">' + escapeHtml(by) + '</div>' : '';
         return '' +
           '<div class="card">' +
             coverHtml(g) +
-            '<h3>' + escapeHtml(g.title || g.fileName) + '</h3>' +
+            '<h3><button type="button" data-details="' + escapeHtml(g.fileId) + '">' +
+              escapeHtml(g.title || g.fileName) + '</button></h3>' +
+            byline +
             '<div class="meta">' + consoleBadge + sizeBadge + '</div>' +
             notes +
             '<div class="spacer"></div>' +
@@ -277,8 +376,89 @@
       if (src === null) {
         return '<div class="cover none">Cover unavailable</div>';
       }
-      return '<div class="cover" data-cover="' + escapeHtml(g.fileId) + '">' +
+      return '<div class="cover" data-cover="' + escapeHtml(g.fileId) + '" data-details="' + escapeHtml(g.fileId) + '">' +
         (src ? '<img src="' + src + '" alt="" loading="lazy">' : '<div class="spinner"></div>') + '</div>';
+    }
+
+    function searchText(g) {
+      return [g.title, g.fileName, g.developer, g.publisher, g.genre, g.credits]
+        .join(' ').toLowerCase();
+    }
+
+    function releaseYear(g) {
+      var m = /^\d{4}/.exec(g.releaseDate);
+      return m ? m[0] : '';
+    }
+
+    // "1992-04-13" → "April 13, 1992"; "1995" and other shapes pass through.
+    var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December'];
+    function formatRelease(s) {
+      var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(s);
+      if (!m) { return s; }
+      var month = MONTHS[parseInt(m[2], 10) - 1];
+      if (!month) { return s; }
+      return m[3] ? month + ' ' + parseInt(m[3], 10) + ', ' + m[1] : month + ' ' + m[1];
+    }
+
+    function showDetails(id) {
+      var g = ALL.filter(function (x) { return x.fileId === id; })[0];
+      if (!g) { return; }
+      var facts = [
+        ['Developer', g.developer], ['Publisher', g.publisher],
+        ['Released', formatRelease(g.releaseDate)], ['Genre', g.genre],
+        ['Players', g.players], ['File', g.fileName + (g.size ? ' (' + g.size + ')' : '')]
+      ].filter(function (f) { return f[1]; }).map(function (f) {
+        return '<dt>' + f[0] + '</dt><dd>' + escapeHtml(f[1]) + '</dd>';
+      }).join('');
+      // Credits are one "Role: Names" per line; lines without a role show as-is.
+      var credits = g.credits.split('\n').filter(function (l) { return l.trim(); })
+        .map(function (line) {
+          var i = line.indexOf(':');
+          return i < 0 ? '<li>' + escapeHtml(line) + '</li>'
+            : '<li><span class="role">' + escapeHtml(line.slice(0, i)) + ':</span>' +
+              escapeHtml(line.slice(i + 1)) + '</li>';
+        }).join('');
+      var src = COVERS[g.fileId];
+      var cover = src ? '<img src="' + src + '" alt="">'
+        : (g.hasCover && src === undefined ? '<div class="spinner"></div>' : 'No cover');
+
+      var dlg = document.getElementById('details');
+      dlg.innerHTML = '' +
+        '<div class="detail">' +
+          '<button type="button" class="close" aria-label="Close">✕</button>' +
+          '<div class="detail-top">' +
+            '<div class="detail-cover" data-cover="' + escapeHtml(g.fileId) + '">' + cover + '</div>' +
+            '<div class="detail-head">' +
+              '<h2 id="details-title">' + escapeHtml(g.title || g.fileName) + '</h2>' +
+              '<div class="meta">' +
+                (g.console ? consoleBadgeHtml(g.console) : '<span class="badge">Unknown console</span>') +
+              '</div>' +
+              (facts ? '<dl class="facts">' + facts + '</dl>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="detail-body">' +
+            (g.description ? '<p>' + escapeHtml(g.description) + '</p>' : '') +
+            (credits ? '<div><h4>Credits</h4><ul class="credits">' + credits + '</ul></div>' : '') +
+            (g.notes ? '<div><h4>Notes</h4><p class="notes">' + escapeHtml(g.notes) + '</p></div>' : '') +
+            '<a class="download" href="' + escapeHtml(g.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
+          '</div>' +
+        '</div>';
+      dlg.querySelector('.close').addEventListener('click', closeDetails);
+      dlg.classList.remove('closing');
+      dlg.showModal();
+    }
+
+    // Plays the closing animation, then actually closes the dialog.
+    var CLOSE_MS = 160;
+    function closeDetails() {
+      var dlg = document.getElementById('details');
+      if (!dlg.open || dlg.classList.contains('closing')) { return; }
+      dlg.classList.add('closing');
+      setTimeout(function () {
+        dlg.classList.remove('closing');
+        dlg.close();
+      }, CLOSE_MS);
     }
 
     // Fetch every cover in small batches, filling in cards already on screen as
@@ -302,14 +482,17 @@
       ids.forEach(function (id) {
         var src = batch[id] || null;
         COVERS[id] = src;
-        var el = document.querySelector('[data-cover="' + CSS.escape(id) + '"]');
-        if (!el) { return; }
-        if (src) {
-          el.innerHTML = '<img src="' + src + '" alt="">';
-        } else {
-          el.className = 'cover none';
-          el.textContent = 'Cover unavailable';
-        }
+        var els = document.querySelectorAll('[data-cover="' + CSS.escape(id) + '"]');
+        Array.prototype.forEach.call(els, function (el) {
+          if (src) {
+            el.innerHTML = '<img src="' + src + '" alt="">';
+          } else if (el.classList.contains('cover')) {
+            el.className = 'cover none';
+            el.textContent = 'Cover unavailable';
+          } else {
+            el.textContent = 'Cover unavailable';
+          }
+        });
       });
     }
 
@@ -337,6 +520,19 @@
       state.textContent = 'Failed to load library: ' + (err && err.message ? err.message : err);
     }
 
+    document.getElementById('grid').addEventListener('click', function (e) {
+      var el = e.target.closest('[data-details]');
+      if (el) { showDetails(el.getAttribute('data-details')); }
+    });
+    // Clicking the backdrop (the dialog element itself, outside its content) closes it.
+    document.getElementById('details').addEventListener('click', function (e) {
+      if (e.target === this) { closeDetails(); }
+    });
+    // Esc closes the dialog instantly by default; animate it instead.
+    document.getElementById('details').addEventListener('cancel', function (e) {
+      e.preventDefault();
+      closeDetails();
+    });
     document.getElementById('search').addEventListener('input', render);
     document.getElementById('console').addEventListener('change', render);
     document.getElementById('sort').addEventListener('change', render);
