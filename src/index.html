@@ -104,7 +104,8 @@
     .notes { color: var(--muted); font-size: 13px; }
     .byline { color: var(--muted); font-size: 13px; margin-top: -4px; }
     .card h3 button { all: unset; cursor: pointer; }
-    .card h3 button:hover { color: var(--accent); }
+    .card h3 button:hover,
+    .card:has(.cover[data-details]:hover) h3 button { color: var(--accent); }
     .card h3 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .cover[data-details] { cursor: pointer; }
 
@@ -244,6 +245,11 @@
     @media (max-width: 520px) { .upload-item { grid-template-columns: 1fr; } }
     .upload-actions { display: flex; gap: 10px; justify-content: flex-end; }
     button.download { border: 0; }
+    .detail-actions { display: flex; gap: 10px; }
+    .detail-actions .download { flex: 1; }
+    button.delete { color: #ff8a8a; border-color: #5a2d35; background: transparent; }
+    button.delete:hover { border-color: #ff8a8a; background: rgba(255, 138, 138, .08); }
+    button.delete:disabled { opacity: .5; cursor: default; }
     button.download:disabled { opacity: .5; cursor: default; }
   </style>
 </head>
@@ -740,7 +746,12 @@
             (g.description ? '<p>' + escapeHtml(g.description) + '</p>' : '') +
             (credits ? '<div><h4>Credits</h4><ul class="credits">' + credits + '</ul></div>' : '') +
             (g.notes ? '<div><h4>Notes</h4><p class="notes">' + escapeHtml(g.notes) + '</p></div>' : '') +
-            '<a class="download" href="' + escapeHtml(g.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
+            '<div class="detail-actions">' +
+              '<a class="download" href="' + escapeHtml(g.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
+              (ACCESS.canUploadGames
+                ? '<button type="button" class="delete" data-delete="' + escapeHtml(g.fileId) + '">Delete</button>'
+                : '') +
+            '</div>' +
           '</div>' +
         '</div>';
       dlg.querySelector('.close').addEventListener('click', closeDetails);
@@ -899,6 +910,31 @@
       reader.readAsDataURL(file);
     });
 
+    // ----- Delete --------------------------------------------------------------
+
+    function deleteGame(id, btn) {
+      var g = ALL.filter(function (x) { return x.fileId === id; })[0];
+      if (!g) { return; }
+      if (!confirm('Delete "' + (g.title || g.fileName) + '"?\n\n' +
+          'This moves the ROM file and its cover to Drive\'s trash (recoverable for 30 days) ' +
+          'and removes its row from the spreadsheet.')) {
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+      run('deleteGame', id).then(function () {
+        ALL = ALL.filter(function (x) { return x.fileId !== id; });
+        delete COVERS[id];
+        closeDetails();
+        populateConsoles();
+        render();
+      }, function (err) {
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+        alert('Delete failed: ' + errText(err));
+      });
+    }
+
     // ----- Game upload -------------------------------------------------------
 
     var PENDING = [];  // { file, el } for each file picked in the upload dialog
@@ -1042,6 +1078,8 @@
     });
     // Clicking the backdrop (the dialog element itself, outside its content) closes it.
     document.getElementById('details').addEventListener('click', function (e) {
+      var del = e.target.closest('[data-delete]');
+      if (del) { deleteGame(del.getAttribute('data-delete'), del); return; }
       var up = e.target.closest('[data-upload-cover]');
       if (up) { pickCover(up.getAttribute('data-upload-cover')); return; }
       var chip = e.target.closest('[data-console]');

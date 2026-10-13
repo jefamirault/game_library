@@ -207,7 +207,7 @@ function getAccess_() {
  */
 function driveCapabilities_(id) {
   var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id +
-    '?fields=capabilities(canAddChildren,canEdit)&supportsAllDrives=true', {
+    '?fields=capabilities(canAddChildren,canEdit,canTrash)&supportsAllDrives=true', {
     headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
   });

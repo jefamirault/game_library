@@ -41,7 +41,7 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers, plus d
 
    **`GameInfo.gs` — reference metadata.** `GAME_INFO` maps ROM FileId → developer, publisher, release date, genre, players, credits and a description (sourced from Wikipedia infoboxes; North American dates for USA dumps). `fillGameInfo()` (menu item; also run at the end of `setupDatabase()`) copies it into the sheet's game info columns, **filling blank cells only** — the sheet wins once a value is there. New ROMs need a new `GAME_INFO` entry, or fill the sheet by hand.
 
-   **`Upload.gs` — uploads from the web UI, as the visitor.** `startRomUpload()` opens a Drive resumable-upload session in the ROMs folder (with the page's `Origin`, so the browser may PUT to it) and hands the session URL to the browser, which sends the file straight to Drive; `finishRomUpload()` then appends the sheet row via `romRow_` (shared with `setupDatabase()`). `uploadCover()` saves `<ROM FileId>.<ext>` in Assets, retiring the old cover (trashed, or renamed `replaced-…` when the visitor doesn't own it).
+   **`Upload.gs` — uploads from the web UI, as the visitor.** `startRomUpload()` opens a Drive resumable-upload session in the ROMs folder (with the page's `Origin`, so the browser may PUT to it) and hands the session URL to the browser, which sends the file straight to Drive; `finishRomUpload()` then appends the sheet row via `romRow_` (shared with `setupDatabase()`). `uploadCover()` saves `<ROM FileId>.<ext>` in Assets, retiring the old cover (trashed, or renamed `replaced-…` when the visitor doesn't own it). `deleteGame()` trashes the ROM (refused unless Drive's `canTrash` allows it — in My Drive only the owner can) and its covers, then deletes the sheet row.
 
 3. **`index.html` — the browse/download UI.** Pure client-side rendering of the `getGames()` result with search (title, filename, developer, publisher, genre, credits), a per-console filter, and sorting. Clicking a title or cover opens a details dialog with the game info. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
 
@@ -54,7 +54,7 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers, plus d
   | Visitor can… | They get |
   |---|---|
   | view the spreadsheet + ROMs folder (Assets is inside it) | the library, covers, downloads, folder/sheet links |
-  | add to the ROMs folder **and** edit the spreadsheet | **Add games** |
+  | add to the ROMs folder **and** edit the spreadsheet | **Add games**, and **Delete** (for ROM files they own) |
   | add to the Assets folder | **Upload / Replace cover** |
   | not view the spreadsheet | a "no access" message |
 

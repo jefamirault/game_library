@@ -141,6 +141,58 @@ function uploadCover(romId, dataUrl) {
 }
 
 /**
+ * Removes a game from the library: trashes its ROM file and cover(s) in Drive
+ * (recoverable from Drive's trash for 30 days) and deletes its sheet row.
+ * The ROM goes first — it's the step most likely to be refused, since in My
+ * Drive only a file's owner can trash it — so a refusal leaves everything as
+ * it was.
+ */
+function deleteGame(romId) {
+  if (!getAccess_().canUploadGames) {
+    throw new Error('You don\'t have permission to delete games.');
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getOrCreateSheet_();
+    var rowNum = findRow_(sheet, romId);
+    if (!rowNum) {
+      throw new Error('That game is no longer in the library.');
+    }
+
+    var file = null;
+    try {
+      file = DriveApp.getFileById(romId);
+    } catch (e) {
+      // Already gone from Drive — just clean up the row.
+    }
+    if (file) {
+      var caps = driveCapabilities_(romId);
+      if (!caps || !caps.canTrash) {
+        throw new Error('Only the file\'s owner (' + ownerEmail_(file) + ') can delete "' +
+          file.getName() + '".');
+      }
+      file.setTrashed(true);
+    }
+
+    retireCovers_(DriveApp.getFolderById(ASSETS_FOLDER_ID), romId, null);
+    CacheService.getScriptCache().remove('coverIndex');
+    sheet.deleteRow(rowNum);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** A file's owner's email, or "someone else" when Drive won't say. */
+function ownerEmail_(file) {
+  try {
+    return file.getOwner().getEmail() || 'someone else';
+  } catch (e) {
+    return 'someone else';
+  }
+}
+
+/**
  * Takes every other cover for romId out of the Assets folder. Trashes them
  * when the visitor may; otherwise (only owners can trash in My Drive) renames
  * them so they no longer match a ROM id.
