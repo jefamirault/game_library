@@ -191,6 +191,22 @@ var GAME_INFO = {
     description: 'The Brickster has broken out of jail and stolen the bricks from LEGO Island\'s Constructopedia, the book that holds the island together. Playing as Pepper Roni the pizza delivery boy, you travel the island and beyond, completing tasks for its residents to recover the lost pages and put the Brickster back behind bars. This is the Game Boy Advance version of the 2001 sequel to LEGO Island.'
   },
 
+  // Motherload
+  '1VbC-m0kvGLCyAmb0mggXIqiiqm0uOzNw': {
+    developer: 'XGen Studios',
+    publisher: 'XGen Studios',
+    released: '2004',
+    genre: 'Action, Mining',
+    players: '1',
+    credits: [
+      'Team lead, programmer and composer: Skye Boyes',
+      'Graphics: Robyn Dubuc',
+      'Concept and story: David J. P. Thompson',
+      'Music: Nano Uribe'
+    ],
+    description: 'A cult-classic Flash game. Mr. Natas of the Mars mining company hires you to dig for minerals deep under the Martian surface in a drilling pod. Ores and gems are hauled back up and sold to upgrade the drill, hull, engine, fuel tank, radiator and cargo bay. Run out of fuel or hull underground and the pod explodes, so every trip down is a gamble on how far to push. Messages from your employer grow stranger the deeper you dig, leading to a showdown far below the surface.'
+  },
+
   // Pokemon - Crystal Version (USA, Europe) (Rev 1)
   '1FL_4Wx2SDyW2K99-Ag2EXWeUaKIRqlAA': {
     developer: 'Game Freak',
@@ -339,7 +355,12 @@ var GAME_INFO = {
     released: '2003-08-25',
     genre: 'Pinball',
     players: '1',
-    credits: [],
+    credits: [
+      'Director: Masaru Kuribayashi',
+      'Producers: Hiroyuki Jinnai, Takehiro Izushi, Makoto Nakayama, Hatao Ogata, Hiroaki Tsuru',
+      'Executive producers: Satoru Iwata, Tsunekazu Ishihara',
+      'Composers: Kazuya Suyama, Ayumi Sano'
+    ],
     description: 'A Game Boy Advance follow-up to Pokémon Pinball, built around the Hoenn Pokémon of Ruby and Sapphire. The Ruby and Sapphire tables let you catch, hatch and evolve Pokémon to fill a Pokédex of over 200, travel between habitats, and stop by a Pokémart to buy upgrades. Bonus stages against Pokémon like Kecleon, Groudon and Kyogre fill out the set.'
   },
 
@@ -564,6 +585,41 @@ var GAME_INFO = {
     description: 'While Mario was away, Wario took over his castle and locked the door behind him. To get back in, Mario must collect six golden coins from the six zones of Mario Land, chosen in any order from a world map — a giant mechanical Mario, a space zone, a haunted pumpkin. Larger, more detailed sprites than the first game, a save feature, and the first appearance of Wario.'
   },
 
+  // Super Mario World 2 - Yoshi's Island (USA) (Rev 1)
+  '1cNQTf9olRr5bsRDP4pmcekIIxrImrAqi': {
+    developer: 'Nintendo EAD',
+    publisher: 'Nintendo',
+    released: '1995-10-04',
+    genre: 'Platform',
+    players: '1',
+    credits: [
+      'Directors: Takashi Tezuka, Toshihiko Nakago, Shigefumi Hino, Hideki Konno',
+      'Producer: Shigeru Miyamoto',
+      'Designer: Yasuhisa Yamamura',
+      'Programmer: Toshio Iwawaki',
+      'Artists: Yoshiaki Koizumi, Hisashi Nogami',
+      'Composer: Koji Kondo'
+    ],
+    description: 'A prequel to the Mario series. Kamek the Magikoopa snatches baby Luigi, and baby Mario falls onto Yoshi\'s Island, where a relay of Yoshis carries him across the island to rescue his brother. Yoshi swallows enemies to make eggs to throw at targets, and flutter-jumps to stay in the air. When he\'s hit, Baby Mario floats off in a bubble and a star countdown starts. Its hand-drawn, crayon-and-pastel look and the Super FX 2 chip\'s rotating and scaling effects made it stand out late in the SNES era.'
+  },
+
+  // Super Metroid (Japan, USA) (En,Ja)
+  '1909PcPDQEcSY5Hvqp7t3fQSy_tr804ld': {
+    developer: 'Nintendo R&D1, Intelligent Systems',
+    publisher: 'Nintendo',
+    released: '1994-04-18',
+    genre: 'Action-adventure, Metroidvania',
+    players: '1',
+    credits: [
+      'Director: Yoshio Sakamoto',
+      'Producer: Makoto Kano',
+      'Programmer: Kenji Imai',
+      'Artists: Hirofumi Matsuoka, Masahiko Mashimo, Hiroyuki Kimura',
+      'Composers: Kenji Yamamoto, Minako Hamano'
+    ],
+    description: 'Samus Aran leaves the last Metroid, a larva, at the Ceres space colony for study, but Ridley attacks the station and steals it. She follows him to the planet Zebes, where the Space Pirates are rebuilding under Mother Brain. Zebes is one huge interconnected map. Each power-up, from the Morph Ball to the Grapple Beam and Space Jump, opens paths back through areas you\'ve already seen. Almost no text tells the story; the lonely atmosphere does. Its design gave the "Metroidvania" genre half its name, and it remains a favorite of speedrunners.'
+  },
+
   // The Legend of Zelda - A Link to the Past (USA)
   '1PRL9NjD7EQ23l5UdT3ZyIJRfydY7Z4zK': {
     developer: 'Nintendo EAD',
@@ -611,7 +667,9 @@ var GAME_INFO = {
     released: '2002-10-23',
     genre: 'Sports',
     players: '',
-    credits: [],
+    credits: [
+      'Composer: Manfred Linzner'
+    ],
     description: 'The Game Boy Advance version of Tony Hawk\'s Pro Skater 4, by Vicarious Visions. It uses the isometric 3D engine refined over the earlier GBA ports, with levels adapted from the console game and the series\' goal-based career mode.'
   },
 
@@ -685,7 +743,9 @@ var GAME_INFO = {
     released: '2005-02-18',
     genre: 'Digital card game',
     players: '1–2',
-    credits: [],
+    credits: [
+      'Original creator: Kazuki Takahashi'
+    ],
     description: 'A Game Boy Advance adaptation of the Yu-Gi-Oh! trading card game, using the official rules of its day. You build decks from a large card pool and duel characters from the anime, earning card packs as you win. This is the European release; in North America it was titled 7 Trials to Glory: World Championship Tournament 2005.'
   },
 
@@ -696,7 +756,10 @@ var GAME_INFO = {
     released: '2003-04-15',
     genre: 'Digital card game',
     players: '1–2',
-    credits: [],
+    credits: [
+      'Producer: Satoshi Shimomura',
+      'Original creator: Kazuki Takahashi'
+    ],
     description: 'A Game Boy Advance adaptation of the Yu-Gi-Oh! trading card game, played under the real card game\'s rules. You build a deck and duel through characters from the anime, earning new cards along the way, and can trade or duel with friends over the link cable. It\'s an updated international version of the Japanese Duel Monsters 6: Expert 2.'
   }
 };
@@ -704,3 +767,4 @@ var GAME_INFO = {
 // Duplicate ROM files of the same game share its entry.
 GAME_INFO['1K5X30Av51gBBo-cFxi8EXvHSfjVbZglD'] = GAME_INFO['1JqfT5nGk2OEjL2VWp33bg5drX4idzwjE']; // The Minish Cap
 GAME_INFO['15oFcPIr2GrI4bRXvcGQH8olmW1-YMd23'] = GAME_INFO['1oSEG1IyZV_t7ulxPHgQSZCh4Kn9Acv2e']; // Super Mario Bros. Deluxe
+GAME_INFO['1SLdZ72kR2rVYjMFC7fiPXZ564--WucZU'] = GAME_INFO['1XwetAe68cYH_cAhKR-NSr6l4mFJ1g6UP']; // Kirby & the Amazing Mirror
