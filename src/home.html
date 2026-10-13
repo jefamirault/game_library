@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('styles') ?>
+  <style>
+    main { max-width: 860px; }
+    section { margin-bottom: 34px; }
+    h2 { font-size: 16px; margin: 0 0 12px; }
+    .libs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .lib { text-decoration: none; color: inherit; }
+    .lib:hover { border-color: var(--accent); }
+    .lib:hover h3 { color: var(--accent); }
+    .lib .owner { color: var(--muted); font-size: 13px; }
+    .create { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .create label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+    .create .hint { font-size: 12px; }
+    .create .actions { display: flex; justify-content: flex-end; }
+    .about { color: var(--muted); font-size: 14px; }
+    .about p { margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>🎮 Game Library</h1>
+      <span class="count">Your game collections, in Google Drive</span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Your libraries</h2>
+      <div id="state" class="state">Loading…</div>
+      <div class="libs" id="libs"></div>
+    </section>
+
+    <section>
+      <h2>Create a library</h2>
+      <div class="create">
+        <label>Name
+          <input type="text" id="name" placeholder="e.g. Family Games" maxlength="100">
+        </label>
+        <label>Existing Drive folder of ROMs <span class="hint">(optional — a folder link from My Drive or a shared drive; leave blank to start with a new empty folder)</span>
+          <input type="url" id="folder" placeholder="https://drive.google.com/drive/folders/…">
+        </label>
+        <div class="status" id="create-status"></div>
+        <div class="actions"><button type="button" class="download" id="create">Create library</button></div>
+      </div>
+    </section>
+
+    <section class="about">
+      <h2>How sharing works</h2>
+      <p>A library is a spreadsheet plus a Drive folder of ROMs, in your own Drive. Your Google sharing decides who can see it: share the spreadsheet and the ROMs folder, or open the library and use <b>Share &amp; manage</b>, which does both.</p>
+      <p>Viewers can browse and download. Editors can also add and delete games, upload covers, and share.</p>
+    </section>
+  </main>
+
+  <script>
+    var APP_URL = <?!= scriptJson_(appUrl) ?>;
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function libUrl(id) { return APP_URL + '?library=' + encodeURIComponent(id); }
+
+    function onLibraries(libs) {
+      var state = document.getElementById('state');
+      if (!libs.length) {
+        state.textContent = 'No libraries yet. Create one below, or ask someone to share theirs with you.';
+        return;
+      }
+      state.style.display = 'none';
+      document.getElementById('libs').innerHTML = libs.map(function (l) {
+        return '<a class="card lib" href="' + escapeHtml(libUrl(l.id)) + '" target="_top">' +
+          '<h3>' + escapeHtml(l.name) + '</h3>' +
+          '<div class="owner">' + (l.ownedByMe ? 'Yours' : 'Shared by ' + escapeHtml(l.owner)) + '</div>' +
+          '</a>';
+      }).join('');
+    }
+
+    function onError(err) {
+      var state = document.getElementById('state');
+      state.className = 'state error';
+      state.textContent = 'Couldn\'t list your libraries: ' + (err && err.message ? err.message : err);
+    }
+
+    document.getElementById('create').addEventListener('click', function () {
+      var btn = this;
+      var status = document.getElementById('create-status');
+      btn.disabled = true;
+      status.className = 'status';
+      status.textContent = 'Creating… (scanning an existing folder can take a minute)';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          status.className = 'status done';
+          status.textContent = 'Created — opening it…';
+          window.open(libUrl(res.id), '_top');
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false;
+          status.className = 'status error';
+          status.textContent = err && err.message ? err.message : String(err);
+        })
+        .createLibrary(document.getElementById('name').value, document.getElementById('folder').value);
+    });
+
+    google.script.run.withSuccessHandler(onLibraries).withFailureHandler(onError).listLibraries();
+  </script>
+</body>
+</html>

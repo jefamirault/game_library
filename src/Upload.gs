@@ -13,7 +13,7 @@ var MAX_COVER_BYTES = 5 * 1024 * 1024;
 var COVER_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 
 /**
- * Starts a resumable Drive upload of a ROM into the ROMs folder and returns the
+ * Starts a resumable Drive upload of a ROM into a library's ROMs folder and returns the
  * session URL. The browser then PUTs the file to it in chunks — straight to
  * Drive, so large ROMs never pass through Apps Script. The session URL only
  * accepts this one file; the OAuth token stays on the server.
@@ -21,8 +21,9 @@ var COVER_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
  * origin is the page's own origin: Drive only answers the browser's
  * cross-origin PUTs if the session was started with it.
  */
-function startRomUpload(name, size, mimeType, origin) {
-  if (!getAccess_().canUploadGames) {
+function startRomUpload(libraryId, name, size, mimeType, origin) {
+  var lib = openLibrary_(libraryId);
+  if (!getAccess_(lib).canUploadGames) {
     throw new Error('You don\'t have permission to add games.');
   }
   name = String(name || '').trim();
@@ -41,7 +42,7 @@ function startRomUpload(name, size, mimeType, origin) {
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
       method: 'post',
       contentType: 'application/json; charset=UTF-8',
-      payload: JSON.stringify({ name: name, parents: [ROMS_FOLDER_ID] }),
+      payload: JSON.stringify({ name: name, parents: [lib.romsFolderId] }),
       headers: {
         Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
         'X-Upload-Content-Type': mimeType || 'application/octet-stream',
@@ -64,19 +65,20 @@ function startRomUpload(name, size, mimeType, origin) {
  * come from the upload form; blank ones are guessed from the filename, as the
  * folder scan does.
  */
-function finishRomUpload(fileId, title, consoleName) {
-  if (!getAccess_().canUploadGames) {
+function finishRomUpload(libraryId, fileId, title, consoleName) {
+  var lib = openLibrary_(libraryId);
+  if (!getAccess_(lib).canUploadGames) {
     throw new Error('You don\'t have permission to add games.');
   }
   var file = DriveApp.getFileById(fileId);
-  if (!inFolder_(file, ROMS_FOLDER_ID)) {
+  if (!inFolder_(file, lib.romsFolderId)) {
     throw new Error('That file isn\'t in the ROMs folder.');
   }
 
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var sheet = getOrCreateSheet_();
+    var sheet = lib.sheet;
     if (findRow_(sheet, fileId)) {
       throw new Error('"' + file.getName() + '" is already in the library.');
     }
@@ -86,7 +88,7 @@ function finishRomUpload(fileId, title, consoleName) {
       console: String(consoleName || '').trim().slice(0, 100)
     });
     sheet.appendRow(row);
-    return gameFromRow_(row, headerIndex_(header), getCoverIndex_(true));
+    return gameFromRow_(row, headerIndex_(header), getCoverIndex_(lib.assetsFolderId, true));
   } finally {
     lock.releaseLock();
   }
@@ -97,11 +99,12 @@ function finishRomUpload(fileId, title, consoleName) {
  * replacing any existing cover. dataUrl is the image as a data: URL. Returns
  * the cover as the web app shows it (a data URL of the Drive thumbnail).
  */
-function uploadCover(romId, dataUrl) {
-  if (!getAccess_().canUploadCovers) {
+function uploadCover(libraryId, romId, dataUrl) {
+  var lib = openLibrary_(libraryId);
+  if (!getAccess_(lib).canUploadCovers) {
     throw new Error('You don\'t have permission to upload covers.');
   }
-  var sheet = getOrCreateSheet_();
+  var sheet = lib.sheet;
   var rowNum = findRow_(sheet, romId);
   if (!rowNum) {
     throw new Error('No game with that id.');
@@ -118,13 +121,13 @@ function uploadCover(romId, dataUrl) {
 
   // Add the new cover before retiring the old one, so a failure part-way
   // leaves the game with a cover.
-  var folder = DriveApp.getFolderById(ASSETS_FOLDER_ID);
+  var folder = DriveApp.getFolderById(lib.assetsFolderId);
   var name = romId + '.' + ext;
   var created = folder.createFile(Utilities.newBlob(bytes, m[1], name));
   retireCovers_(folder, romId, created.getId());
 
   var cache = CacheService.getScriptCache();
-  cache.remove('coverIndex');
+  cache.remove(coverIndexKey_(lib.assetsFolderId));
   var url = coverDataUrl_(created.getId(), cache);
 
   // The sheet's Image cell too, when the visitor can edit the sheet. It's
@@ -147,14 +150,15 @@ function uploadCover(romId, dataUrl) {
  * Drive only a file's owner can trash it — so a refusal leaves everything as
  * it was.
  */
-function deleteGame(romId) {
-  if (!getAccess_().canUploadGames) {
+function deleteGame(libraryId, romId) {
+  var lib = openLibrary_(libraryId);
+  if (!getAccess_(lib).canUploadGames) {
     throw new Error('You don\'t have permission to delete games.');
   }
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var sheet = getOrCreateSheet_();
+    var sheet = lib.sheet;
     var rowNum = findRow_(sheet, romId);
     if (!rowNum) {
       throw new Error('That game is no longer in the library.');
@@ -175,8 +179,8 @@ function deleteGame(romId) {
       file.setTrashed(true);
     }
 
-    retireCovers_(DriveApp.getFolderById(ASSETS_FOLDER_ID), romId, null);
-    CacheService.getScriptCache().remove('coverIndex');
+    retireCovers_(DriveApp.getFolderById(lib.assetsFolderId), romId, null);
+    CacheService.getScriptCache().remove(coverIndexKey_(lib.assetsFolderId));
     sheet.deleteRow(rowNum);
   } finally {
     lock.releaseLock();

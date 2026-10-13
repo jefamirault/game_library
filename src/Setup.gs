@@ -66,11 +66,19 @@ var AMBIGUOUS_EXTENSIONS = {
 };
 
 /**
- * Entry point (also wired to the spreadsheet menu): scan the folder and update
- * the Games sheet. Reports a summary via the UI when available, otherwise logs.
+ * Menu entry point: scan this spreadsheet's library folder and update its
+ * Games sheet. Reports a summary via the UI when available, otherwise logs.
  */
 function setupDatabase() {
-  var sheet = getOrCreateSheet_();
+  notify_(setupDatabase_(activeLibrary_()));
+}
+
+/**
+ * Scans a library's ROMs folder and appends rows for new files; returns a
+ * summary. Also used by the web app (scanLibrary, createLibrary).
+ */
+function setupDatabase_(lib) {
+  var sheet = lib.sheet;
 
   // Build a set of file ids already in the sheet so we never duplicate.
   var existing = {};
@@ -82,7 +90,7 @@ function setupDatabase() {
     });
   }
 
-  var folder = DriveApp.getFolderById(ROMS_FOLDER_ID);
+  var folder = DriveApp.getFolderById(lib.romsFolderId);
   var files = collectFiles_(folder);
 
   // Rows follow the sheet's own header order, which may differ from COLUMNS.
@@ -103,10 +111,10 @@ function setupDatabase() {
       .setValues(newRows);
   }
 
-  var filled = fillGameInfo_();
-  var covered = insertCoverImages_();
+  var filled = fillGameInfo_(sheet);
+  var covered = insertCoverImages_(lib);
 
-  notify_('Scan complete.\n\n' +
+  return ('Scan complete.\n\n' +
     'Files found: ' + files.length + '\n' +
     'New games added: ' + newRows.length + '\n' +
     'Already in database: ' + skipped + '\n' +
@@ -155,14 +163,13 @@ var INFO_COLUMNS = {
  * overwrites a cell that has a value, so edits made in the sheet stick.
  */
 function fillGameInfo() {
-  var filled = fillGameInfo_();
+  var filled = fillGameInfo_(activeLibrary_().sheet);
   notify_('Filled ' + filled + ' blank game info cell' + (filled === 1 ? '' : 's') +
     ' from GameInfo.gs.\n\nGames missing from GameInfo.gs are left as they are.');
 }
 
-/** Does the work for fillGameInfo(); returns the number of cells filled. */
-function fillGameInfo_() {
-  var sheet = getOrCreateSheet_();
+/** Does the work for fillGameInfo() on a Games sheet; returns the number of cells filled. */
+function fillGameInfo_(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) { return 0; }
   var header = getHeader_(sheet);
@@ -205,7 +212,7 @@ var COVER_ROW_HEIGHT = 110;
  * folder) into its Image cell.
  */
 function insertCoverImages() {
-  var covered = insertCoverImages_();
+  var covered = insertCoverImages_(activeLibrary_());
   notify_('Added ' + covered + ' cover image' + (covered === 1 ? '' : 's') +
     ' from the Assets folder.\n\nGames without a cover have a blank Image cell.');
 }
@@ -218,14 +225,14 @@ function insertCoverImages() {
  * Images go in as data URLs (Drive thumbnails), so they show for anyone who
  * can see the sheet, without the Assets folder being shared.
  */
-function insertCoverImages_() {
-  var sheet = getOrCreateSheet_();
+function insertCoverImages_(lib) {
+  var sheet = lib.sheet;
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) { return 0; }
   var header = getHeader_(sheet);
   var ids = sheet.getRange(2, header.indexOf('FileId') + 1, lastRow - 1, 1).getValues();
   var titles = sheet.getRange(2, header.indexOf('Title') + 1, lastRow - 1, 1).getValues();
-  var covers = getCoverIndex_(true);
+  var covers = getCoverIndex_(lib.assetsFolderId, true);
   var cache = CacheService.getScriptCache();
 
   var covered = 0;

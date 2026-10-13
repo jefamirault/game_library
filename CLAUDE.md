@@ -4,12 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Google Apps Script (GAS) web app, managed locally with **clasp**, that serves as a browsable/downloadable library of game ROMs. It is a **container-bound** script attached to a Google Spreadsheet that acts as the database. A shared Google Drive folder holds the actual ROM files.
+A Google Apps Script (GAS) web app, managed locally with **clasp**, that serves browsable/downloadable libraries of game ROMs. **One deployment serves many libraries**: each library is a Google Spreadsheet (the database) plus a Drive folder of ROMs with an `Assets` subfolder of cover art, all in its owner's own Drive or a shared drive. The plain `/exec` URL is a landing page (list your libraries, create one); a library is `/exec?library=<spreadsheet id>`.
 
-Key IDs (see `src/Code.gs` and `.clasp.json`):
-- **ROMs Drive folder:** `1J2_2qBnPibevdMs2LwPFAxTE9Kl2tB_F` (`ROMS_FOLDER_ID`)
-- **Cover art Drive folder:** `1x1MXKl6JNQn2HJeHpSpkmWCQ060ZS2ZP` (`ASSETS_FOLDER_ID`, an `Assets` subfolder of the ROMs folder)
-- **Database spreadsheet / script parent:** `1qWhIB1XEXekPt--cZy2YXltgQ7vhBu1Cdh2O_tIYcHE`
+The script is also **container-bound** to the original library's spreadsheet, `1qWhIB1XEXekPt--cZy2YXltgQ7vhBu1Cdh2O_tIYcHE` (see `.clasp.json`), which gives that sheet the **Game Library** menu. Its folders (`LEGACY_*` in `src/Library.gs`) predate per-library config.
 
 ## Commands
 
@@ -27,23 +24,25 @@ There is no build, lint, or test tooling — source pushes as-is.
 
 ## Architecture
 
-Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers, plus data and upload files:
+Source lives in `src/` (set by `rootDir` in `.clasp.json`).
 
-1. **`Setup.gs` — database population.** `setupDatabase()` recursively scans `ROMS_FOLDER_ID`, derives a Title from each filename, and guesses Console from the file extension via `EXTENSION_TO_CONSOLE`. Ambiguous container formats (`.iso`, `.bin`, `.zip`, …) are imported with a blank Console for the user to fill in. **Re-running is idempotent and additive:** rows are keyed by Drive `FileId`, so existing rows (and any manual edits to Console/Title/Notes) are never touched — only new files are appended.
+0. **`Library.gs` — the library model.** `openLibrary_(id)` opens a library's spreadsheet **as the visitor** (which is the access check for every entry point), reads its hidden `Config` sheet (`Name`, `RomsFolderId`, `AssetsFolderId`), and returns `{ id, ss, sheet, name, romsFolderId, assetsFolderId }`. A spreadsheet without `Config` is refused ("isn't a game library"), so the app never writes into an arbitrary sheet. The exception is `LEGACY_LIBRARY_ID`: it falls back to the `LEGACY_*` folders, and an editor's first visit writes its `Config`. Libraries carry the Drive file property `gameLibrary=1` (`tagLibrary_`), which is how `listLibraries()` finds the ones a visitor can see. Also here: `createLibrary(name, folderLink)` (new or existing folder, with the spreadsheet placed *inside* the ROMs folder so sharing that one folder shares everything), `shareLibrary()` (adds a viewer/editor to the sheet + ROMs folder), and `scanLibrary()` / `refreshSheetImages()` (web versions of the menu items, for libraries with no bound script). Every client-callable function takes the library id as its first argument.
+
+1. **`Setup.gs` — database population.** `setupDatabase_(lib)` recursively scans the library's ROMs folder, derives a Title from each filename, and guesses Console from the file extension via `EXTENSION_TO_CONSOLE`. Ambiguous container formats (`.iso`, `.bin`, `.zip`, …) are imported with a blank Console for the user to fill in. **Re-running is idempotent and additive:** rows are keyed by Drive `FileId`, so existing rows (and any manual edits to Console/Title/Notes) are never touched — only new files are appended.
 
 2. **`Code.gs` — config, sheet access, web app entry points.**
    - `COLUMNS` is the single source of truth for the sheet schema. Code reads/writes columns **by header label**, not by index, so the header row (row 1 of the `Games` sheet) must stay intact. Reorder columns only by editing `COLUMNS`.
-   - `doGet()` serves `index.html` (as a template — it inlines `EXTENSION_TO_CONSOLE` for the upload form); `getGames()` is the client-callable bridge (`google.script.run`) returning `{ games, access }`: game objects (built by `gameFromRow_`) plus what this visitor may do.
-   - `getAccess_()` asks the Drive API (`capabilities` on the ROMs folder, Assets folder and spreadsheet, as the visitor) for the header links and which upload buttons to show.
-   - `getCovers(romIds)` serves cover art from `ASSETS_FOLDER_ID` as data URLs (Drive thumbnails, cached in the script-wide `CacheService`). Covers are named `<ROM FileId>.<ext>`. It takes ROM ids, never raw Drive ids, so it only ever serves files from the Assets folder.
-   - `onOpen()` adds a **Game Library** spreadsheet menu (run setup, fill game info, show cover images, show web app URL).
-   - `getOrCreateSheet_()` appends any `COLUMNS` missing from an existing sheet's header, so adding a column to `COLUMNS` migrates the live sheet on the next run.
+   - `doGet()` serves `index.html` for `?library=` or `home.html` without it, as templates (given `libraryId` and `appUrl`; values go into scripts via `scriptJson_`). Both pull in `styles.html` with `include()`. `getGames(libraryId)` is the client-callable bridge (`google.script.run`) returning `{ name, games, access }`: game objects (built by `gameFromRow_`) plus what this visitor may do.
+   - `getAccess_(lib)` asks the Drive API (`driveApi_`; `capabilities` on the ROMs folder, Assets folder and spreadsheet, as the visitor) for the header links and which buttons to show.
+   - `getCovers(libraryId, romIds)` serves cover art from the library's Assets folder as data URLs (Drive thumbnails, cached in the script-wide `CacheService`; the cover index is keyed per Assets folder, `coverIndexKey_`). Covers are named `<ROM FileId>.<ext>`. It takes ROM ids, never raw Drive ids, and opens the library first, so the shared cache never serves a library to someone it isn't shared with.
+   - `onOpen()` adds a **Game Library** spreadsheet menu (run setup, fill game info, show cover images, show web app URL). The menu items are wrappers that run on `activeLibrary_()`.
+   - `getOrCreateSheet_(ss)` appends any `COLUMNS` missing from an existing sheet's header, so adding a column to `COLUMNS` migrates the live sheet on the next run.
 
    **`GameInfo.gs` — reference metadata.** `GAME_INFO` maps ROM FileId → developer, publisher, release date, genre, players, credits and a description (sourced from Wikipedia infoboxes; North American dates for USA dumps). `fillGameInfo()` (menu item; also run at the end of `setupDatabase()`) copies it into the sheet's game info columns, **filling blank cells only** — the sheet wins once a value is there. New ROMs need a new `GAME_INFO` entry, or fill the sheet by hand.
 
    **`Upload.gs` — uploads from the web UI, as the visitor.** `startRomUpload()` opens a Drive resumable-upload session in the ROMs folder (with the page's `Origin`, so the browser may PUT to it) and hands the session URL to the browser, which sends the file straight to Drive; `finishRomUpload()` then appends the sheet row via `romRow_` (shared with `setupDatabase()`). `uploadCover()` saves `<ROM FileId>.<ext>` in Assets, retiring the old cover (trashed, or renamed `replaced-…` when the visitor doesn't own it). `deleteGame()` trashes the ROM (refused unless Drive's `canTrash` allows it — in My Drive only the owner can) and its covers, then deletes the sheet row.
 
-3. **`index.html` — the browse/download UI.** Pure client-side rendering of the `getGames()` result with search (title, filename, developer, publisher, genre, credits), a per-console filter, and sorting. Clicking a title or cover opens a details dialog with the game info. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
+3. **`home.html` — the landing page** (`listLibraries()`, `createLibrary()`). **`index.html` — a library's browse/download UI.** It has a **Share & manage** dialog for sharing, the library link, and maintenance. Pure client-side rendering of the `getGames()` result with search (title, filename, developer, publisher, genre, credits), a per-console filter, and sorting. Clicking a title or cover opens a details dialog with the game info. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
 
 ## Things that bite
 
@@ -58,7 +57,9 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers, plus d
   | add to the Assets folder | **Upload / Replace cover** |
   | not view the spreadsheet | a "no access" message |
 
-  The `drive` scope is restricted and the project is unverified, so each visitor clicks through Google's "unverified app" warning and a consent screen once (unverified apps are capped at 100 users). Scope changes need re-consent, the owner included.
+  This applies per library. **Share & manage** (`canShare`) shares the sheet and folder in one step.
+
+  The `drive` scope is restricted and the project is unverified, so each visitor clicks through Google's "unverified app" warning and a consent screen once. Unverified apps are capped at 100 users, **across all libraries combined**. Scope changes need re-consent, the owner included.
 - **Download links go straight to Drive** (`https://drive.google.com/uc?export=download&id=<fileId>`).
 - **Covers are proxied through the app, not linked.** `index.html` loads covers in batches via `getCovers()` rather than using Drive image URLs. The local `images/` folder (gitignored) is the source copy; `images/sources.tsv` records which libretro-thumbnails box art each came from. `setupDatabase()` ignores the Assets folder's files because `isLikelyRom_` filters by extension. The sheet's `Image` column shows each cover *in the cell* (`insertCoverImages()`, via `newCellImage()` with the cached thumbnail as a data URL, so the Assets folder stays private). It rewrites the whole column and resets row heights on every run (derived, not hand-edited); `setupDatabase()` calls it too.
 - **Scopes** are declared in `src/appsscript.json` (`spreadsheets`, `drive`, `script.container.ui`, `script.external_request`). `drive` (not `drive.file`) because uploads write into folders the app didn't create; `external_request` for the Drive API calls. The first run after a scope change triggers the OAuth consent prompt.

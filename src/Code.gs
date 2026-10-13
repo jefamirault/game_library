@@ -1,21 +1,14 @@
 /**
  * Game Library — server-side entry points.
  *
- * Bound to the spreadsheet that acts as the games database.
- * The "Games" sheet is the source of truth; Setup.gs populates it from the
- * shared Drive folder, and the web app (doGet/index.html) reads from it.
+ * Serves any number of libraries (see Library.gs): each is a spreadsheet whose
+ * "Games" sheet is the source of truth. Setup.gs populates it from the
+ * library's Drive folder, and the web app (doGet/index.html) reads from it.
+ * The script is also bound to the original library's spreadsheet, for the
+ * spreadsheet menu.
  */
 
 // ----- Configuration ---------------------------------------------------------
-
-/** Drive folder containing the ROM files. */
-var ROMS_FOLDER_ID = '1J2_2qBnPibevdMs2LwPFAxTE9Kl2tB_F';
-
-/**
- * Drive folder (inside the ROMs folder) holding cover art. Each image is named
- * after the ROM it belongs to: <ROM file id>.png.
- */
-var ASSETS_FOLDER_ID = '1x1MXKl6JNQn2HJeHpSpkmWCQ060ZS2ZP';
 
 /**
  * Script-cache lifetimes, in seconds. The index is short so newly added covers
@@ -67,12 +60,12 @@ function onOpen() {
     .addToUi();
 }
 
-/** Shows the deployed web app URL (if any) in a dialog. */
+/** Shows this library's web app URL (if deployed) in a dialog. */
 function showWebAppUrl() {
   var url = ScriptApp.getService().getUrl();
   var ui = SpreadsheetApp.getUi();
   if (url) {
-    ui.alert('Web app URL', url, ui.ButtonSet.OK);
+    ui.alert('Web app URL', url + '?library=' + SpreadsheetApp.getActiveSpreadsheet().getId(), ui.ButtonSet.OK);
   } else {
     ui.alert('Not deployed yet',
       'Deploy the project as a Web app first (clasp deploy, or Deploy ▸ New deployment).',
@@ -83,13 +76,19 @@ function showWebAppUrl() {
 // ----- Web app ---------------------------------------------------------------
 
 /**
- * Serves the browse/download UI, or the deploy stamp at <exec URL>/deploy.json.
+ * Serves a library's browse/download UI (?library=<spreadsheet id>), the
+ * landing page (no library), or the deploy stamp at <exec URL>/deploy.json.
  */
 function doGet(e) {
   if (e && e.pathInfo === 'deploy.json') {
     return deployStamp_();
   }
-  return HtmlService.createTemplateFromFile('index')
+  // Ids are [\w-]; anything else is dropped before it reaches the page.
+  var libraryId = String((e && e.parameter && e.parameter.library) || '').replace(/[^\w-]/g, '');
+  var page = HtmlService.createTemplateFromFile(libraryId ? 'index' : 'home');
+  page.libraryId = libraryId;
+  page.appUrl = ScriptApp.getService().getUrl();
+  return page
     .evaluate()
     .setTitle('Game Library')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -106,29 +105,34 @@ function deployStamp_() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Lets index.html pull in shared HTML/CSS/JS partials via templating. */
+/** Lets the pages pull in shared HTML/CSS/JS partials via templating. */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+/** A value as JSON that's safe inside a <script> block. */
+function scriptJson_(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /**
- * Returns the library for the web app: { games, access }. Each game is a plain
- * object with a direct download URL; access says what this visitor may do (see
- * getAccess_). Called from the client via google.script.run.
+ * Returns a library for the web app: { name, games, access }. Each game is a
+ * plain object with a direct download URL; access says what this visitor may
+ * do (see getAccess_). Called from the client via google.script.run.
  *
- * The web app runs as the visitor, so this fails for anyone the spreadsheet
- * isn't shared with — the client shows that as a "no access" message.
+ * The web app runs as the visitor, so this fails (with a message for them) for
+ * anyone the library isn't shared with.
  */
-function getGames() {
-  var sheet = getOrCreateSheet_();
-  var values = sheet.getDataRange().getValues();
-  var access = getAccess_();
+function getGames(libraryId) {
+  var lib = openLibrary_(libraryId);
+  var values = lib.sheet.getDataRange().getValues();
+  var access = getAccess_(lib);
   if (values.length < 2) {
-    return { games: [], access: access };
+    return { name: lib.name, games: [], access: access };
   }
 
   var idx = headerIndex_(values[0]);
-  var covers = getCoverIndex_();
+  var covers = getCoverIndex_(lib.assetsFolderId);
   var fresh = false;
   var games = [];
   for (var r = 1; r < values.length; r++) {
@@ -138,12 +142,12 @@ function getGames() {
     }
     // A game with no cover in a cached index may just be newer than the cache.
     if (!covers[fileId] && !fresh) {
-      covers = getCoverIndex_(true);
+      covers = getCoverIndex_(lib.assetsFolderId, true);
       fresh = true;
     }
     games.push(gameFromRow_(values[r], idx, covers));
   }
-  return { games: games, access: access };
+  return { name: lib.name, games: games, access: access };
 }
 
 /** Header labels → column index (0-based). */
@@ -184,20 +188,21 @@ function gameFromRow_(row, idx, covers) {
 // ----- Access ----------------------------------------------------------------
 
 /**
- * What the visitor may do, straight from Drive's sharing — the app only
- * reflects it, Drive and Sheets enforce it. Links are null when the visitor
- * can't open them.
+ * What the visitor may do in a library, straight from Drive's sharing — the
+ * app only reflects it, Drive and Sheets enforce it. Links are null when the
+ * visitor can't open them.
  */
-function getAccess_() {
-  var ssId = SpreadsheetApp.getActiveSpreadsheet().getId();
-  var roms = driveCapabilities_(ROMS_FOLDER_ID);
-  var assets = driveCapabilities_(ASSETS_FOLDER_ID);
-  var sheet = driveCapabilities_(ssId);
+function getAccess_(lib) {
+  var roms = driveCapabilities_(lib.romsFolderId);
+  var assets = driveCapabilities_(lib.assetsFolderId);
+  var sheet = driveCapabilities_(lib.id);
   return {
-    folderUrl: roms ? 'https://drive.google.com/drive/folders/' + ROMS_FOLDER_ID : null,
-    sheetUrl: sheet ? 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit' : null,
+    folderUrl: roms ? 'https://drive.google.com/drive/folders/' + lib.romsFolderId : null,
+    sheetUrl: sheet ? 'https://docs.google.com/spreadsheets/d/' + lib.id + '/edit' : null,
     canUploadGames: !!(roms && roms.canAddChildren && sheet && sheet.canEdit),
-    canUploadCovers: !!(assets && assets.canAddChildren)
+    canUploadCovers: !!(assets && assets.canAddChildren),
+    canManage: !!(sheet && sheet.canEdit),
+    canShare: !!(sheet && sheet.canShare && roms && roms.canShare)
   };
 }
 
@@ -206,15 +211,34 @@ function getAccess_() {
  * see it at all.
  */
 function driveCapabilities_(id) {
-  var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id +
-    '?fields=capabilities(canAddChildren,canEdit,canTrash)&supportsAllDrives=true', {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-    muteHttpExceptions: true
-  });
-  if (res.getResponseCode() !== 200) {
+  try {
+    return driveApi_('get', '/files/' + id +
+      '?fields=capabilities(canAddChildren,canEdit,canTrash,canShare)&supportsAllDrives=true').capabilities || {};
+  } catch (e) {
     return null;
   }
-  return JSON.parse(res.getContentText()).capabilities || {};
+}
+
+/**
+ * Calls the Drive v3 API as the visitor and returns the parsed response.
+ * path starts with "/" (e.g. "/files/<id>?fields=…"); body is sent as JSON.
+ */
+function driveApi_(method, path, body) {
+  var options = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  };
+  if (body) {
+    options.contentType = 'application/json; charset=UTF-8';
+    options.payload = JSON.stringify(body);
+  }
+  var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3' + path, options);
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Drive API ' + res.getResponseCode() + ': ' + res.getContentText());
+  }
+  var text = res.getContentText();
+  return text ? JSON.parse(text) : {};
 }
 
 /**
@@ -222,11 +246,13 @@ function driveCapabilities_(id) {
  * Called from the client via google.script.run.
  *
  * Takes ROM ids, never raw Drive ids, so it only ever serves files from the
- * Assets folder. (The web app runs as the visitor, but the cover cache is shared
- * across visitors.)
+ * library's Assets folder. The cover cache is shared across visitors, so the
+ * library is opened first: that's what stops someone it isn't shared with
+ * reading its cached covers.
  */
-function getCovers(romIds) {
-  var covers = getCoverIndex_();
+function getCovers(libraryId, romIds) {
+  var lib = openLibrary_(libraryId);
+  var covers = getCoverIndex_(lib.assetsFolderId);
   var cache = CacheService.getScriptCache();
   var out = {};
   (romIds || []).forEach(function (romId) {
@@ -263,19 +289,19 @@ function coverDataUrl_(assetId, cache) {
 }
 
 /**
- * Maps ROM file id → cover image's Drive id, from the Assets folder.
+ * Maps ROM file id → cover image's Drive id, from a library's Assets folder.
  * Pass refresh = true to skip the cache and re-list the folder.
  */
-function getCoverIndex_(refresh) {
+function getCoverIndex_(assetsFolderId, refresh) {
   var cache = CacheService.getScriptCache();
-  var cached = refresh ? null : cache.get('coverIndex');
+  var cached = refresh ? null : cache.get(coverIndexKey_(assetsFolderId));
   if (cached) {
     return JSON.parse(cached);
   }
   var index = {};
   var files;
   try {
-    files = DriveApp.getFolderById(ASSETS_FOLDER_ID).getFiles();
+    files = DriveApp.getFolderById(assetsFolderId).getFiles();
   } catch (e) {
     return index; // The visitor can't see the Assets folder — no covers, not a failed load.
   }
@@ -286,18 +312,23 @@ function getCoverIndex_(refresh) {
       index[m[1]] = file.getId();
     }
   }
-  cache.put('coverIndex', JSON.stringify(index), COVER_INDEX_CACHE_SECONDS);
+  cache.put(coverIndexKey_(assetsFolderId), JSON.stringify(index), COVER_INDEX_CACHE_SECONDS);
   return index;
+}
+
+/** Script-cache key for an Assets folder's cover index. */
+function coverIndexKey_(assetsFolderId) {
+  return 'coverIndex:' + assetsFolderId;
 }
 
 // ----- Sheet helpers ---------------------------------------------------------
 
 /**
- * Returns the Games sheet, creating it with a header row if missing. Columns
- * added to COLUMNS since the sheet was made are appended to its header.
+ * Returns a spreadsheet's Games sheet, creating it with a header row if
+ * missing. Columns added to COLUMNS since the sheet was made are appended to
+ * its header.
  */
-function getOrCreateSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function getOrCreateSheet_(ss) {
   var sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
