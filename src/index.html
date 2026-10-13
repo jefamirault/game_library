@@ -38,7 +38,7 @@
       margin-top: 14px;
       flex-wrap: wrap;
     }
-    input[type="search"], select {
+    input[type="search"], select, button {
       background: var(--panel-2);
       color: var(--text);
       border: 1px solid var(--border);
@@ -48,7 +48,9 @@
       outline: none;
     }
     input[type="search"] { flex: 1 1 240px; min-width: 180px; }
-    input[type="search"]:focus, select:focus { border-color: var(--accent); }
+    input[type="search"]:focus, select:focus, button:focus { border-color: var(--accent); }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
     main { padding: 16px 20px 60px; max-width: 1100px; margin: 0 auto; }
     .grid {
       display: grid;
@@ -103,6 +105,13 @@
     <div class="controls">
       <input type="search" id="search" placeholder="Search by title or filename…" autocomplete="off">
       <select id="console"><option value="">All consoles</option></select>
+      <select id="sort">
+        <option value="title">Sort: Title</option>
+        <option value="console">Sort: Console</option>
+        <option value="dateAdded">Sort: Date Added</option>
+        <option value="size">Sort: Download Size</option>
+      </select>
+      <button id="dir" type="button" title="Toggle sort direction">▲</button>
     </div>
   </header>
 
@@ -113,6 +122,7 @@
 
   <script>
     var ALL = [];
+    var dirAsc = true;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -153,6 +163,43 @@
       return '<span class="badge console" style="' + style + '">' + escapeHtml(name) + '</span>';
     }
 
+    // Convert a human-readable size ("1.2 MB") back to a byte count for sorting.
+    // Mirrors humanSize_ in Setup.gs; blank/unknown sizes return -1.
+    var SIZE_UNITS = { B: 0, KB: 1, MB: 2, GB: 3 };
+    function parseSize(str) {
+      var m = /([\d.]+)\s*([KMGT]?B)/i.exec(str || '');
+      if (!m) { return -1; }
+      var exp = SIZE_UNITS[m[2].toUpperCase()] || 0;
+      return parseFloat(m[1]) * Math.pow(1024, exp);
+    }
+
+    function sortRows(rows, key) {
+      function titleKey(g) { return (g.title || g.fileName || '').toLowerCase(); }
+      var cmp;
+      // Games missing the sort value always go last, whatever the direction.
+      var missing = function () { return false; };
+      if (key === 'console') {
+        cmp = function (a, b) { return a.console.localeCompare(b.console); };
+        missing = function (g) { return !g.console; };
+      } else if (key === 'dateAdded') {
+        cmp = function (a, b) { return a.dateAdded - b.dateAdded; };
+        missing = function (g) { return !g.dateAdded; };
+      } else if (key === 'size') {
+        cmp = function (a, b) { return parseSize(a.size) - parseSize(b.size); };
+        missing = function (g) { return parseSize(g.size) < 0; };
+      } else {
+        cmp = function (a, b) { return titleKey(a).localeCompare(titleKey(b)); };
+      }
+      rows.sort(function (a, b) {
+        var ma = missing(a), mb = missing(b);
+        if (ma !== mb) { return ma ? 1 : -1; }
+        var r = ma ? 0 : cmp(a, b);
+        if (r !== 0) { return dirAsc ? r : -r; }
+        // Ties always fall back to title A→Z, so the direction only flips the chosen field.
+        return titleKey(a).localeCompare(titleKey(b));
+      });
+    }
+
     function render() {
       var q = document.getElementById('search').value.trim().toLowerCase();
       var con = document.getElementById('console').value;
@@ -164,6 +211,8 @@
         if (q && (g.title + ' ' + g.fileName).toLowerCase().indexOf(q) === -1) return false;
         return true;
       });
+
+      sortRows(rows, document.getElementById('sort').value);
 
       document.getElementById('count').textContent =
         rows.length + ' of ' + ALL.length + ' game' + (ALL.length === 1 ? '' : 's');
@@ -220,6 +269,12 @@
 
     document.getElementById('search').addEventListener('input', render);
     document.getElementById('console').addEventListener('change', render);
+    document.getElementById('sort').addEventListener('change', render);
+    document.getElementById('dir').addEventListener('click', function () {
+      dirAsc = !dirAsc;
+      this.textContent = dirAsc ? '▲' : '▼';
+      render();
+    });
 
     google.script.run.withSuccessHandler(onLoaded).withFailureHandler(onError).getGames();
   </script>

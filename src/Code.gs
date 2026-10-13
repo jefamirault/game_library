@@ -94,12 +94,14 @@ function getGames() {
     if (!fileId) {
       continue;
     }
+    var da = row[idx.DateAdded];
     games.push({
       fileId: String(fileId),
       title: String(row[idx.Title] || ''),
       console: String(row[idx.Console] || ''),
       fileName: String(row[idx.FileName] || ''),
       size: String(row[idx.Size] || ''),
+      dateAdded: (da instanceof Date ? da.getTime() : new Date(da).getTime()) || 0,
       notes: String(row[idx.Notes] || ''),
       downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId
     });
