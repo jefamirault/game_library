@@ -46,7 +46,8 @@ var COLUMNS = [
   'Genre',
   'Players',
   'Credits',     // One "Role: Names" per line
-  'Description'  // A paragraph about the game
+  'Description', // A paragraph about the game
+  'Image'        // Cover art from the Assets folder, in the cell; rewritten by insertCoverImages()
 ];
 
 // ----- Spreadsheet menu ------------------------------------------------------
@@ -60,6 +61,7 @@ function onOpen() {
     .createMenu('Game Library')
     .addItem('Scan Drive folder → update database', 'setupDatabase')
     .addItem('Fill in game info (blank cells only)', 'fillGameInfo')
+    .addItem('Show cover images in sheet', 'insertCoverImages')
     .addSeparator()
     .addItem('Open web app URL', 'showWebAppUrl')
     .addToUi();
@@ -181,23 +183,32 @@ function getCovers(romIds) {
     if (!assetId) {
       return;
     }
-    var key = 'cover:' + assetId;
-    var url = cache.get(key);
-    if (!url) {
-      var file = DriveApp.getFileById(assetId);
-      // Drive's thumbnail is small enough for a card; the full PNG is a fallback.
-      var blob = file.getThumbnail() || file.getBlob();
-      url = 'data:' + blob.getContentType() + ';base64,' +
-        Utilities.base64Encode(blob.getBytes());
-      try {
-        cache.put(key, url, COVER_CACHE_SECONDS);
-      } catch (e) {
-        // Over the cache's 100 KB value limit — serve it uncached.
-      }
-    }
-    out[romId] = url;
+    out[romId] = coverDataUrl_(assetId, cache);
   });
   return out;
+}
+
+/**
+ * A cover image (by its Drive id in the Assets folder) as a data URL, cached.
+ * Used by the web app and by the sheet's Image column.
+ */
+function coverDataUrl_(assetId, cache) {
+  cache = cache || CacheService.getScriptCache();
+  var key = 'cover:' + assetId;
+  var url = cache.get(key);
+  if (!url) {
+    var file = DriveApp.getFileById(assetId);
+    // Drive's thumbnail is small enough for a card; the full PNG is a fallback.
+    var blob = file.getThumbnail() || file.getBlob();
+    url = 'data:' + blob.getContentType() + ';base64,' +
+      Utilities.base64Encode(blob.getBytes());
+    try {
+      cache.put(key, url, COVER_CACHE_SECONDS);
+    } catch (e) {
+      // Over the cache's 100 KB value limit — serve it uncached.
+    }
+  }
+  return url;
 }
 
 /**

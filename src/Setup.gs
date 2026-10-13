@@ -118,12 +118,14 @@ function setupDatabase() {
   }
 
   var filled = fillGameInfo_();
+  var covered = insertCoverImages_();
 
   notify_('Scan complete.\n\n' +
     'Files found: ' + files.length + '\n' +
     'New games added: ' + newRows.length + '\n' +
     'Already in database: ' + skipped + '\n' +
-    'Game info cells filled: ' + filled + '\n\n' +
+    'Game info cells filled: ' + filled + '\n' +
+    'Games with a cover image: ' + covered + '\n\n' +
     'Tip: review the Console column — ambiguous formats (.iso, .bin, .zip, …) ' +
     'are left blank for you to fill in.');
 }
@@ -185,6 +187,58 @@ function fillGameInfo_() {
     }
   });
   return filled;
+}
+
+/** Size of the Image column's cells, in pixels. Covers scale to fit. */
+var COVER_CELL_WIDTH = 90;
+var COVER_ROW_HEIGHT = 110;
+
+/**
+ * Menu entry point: puts each game's cover (<ROM FileId>.png in the Assets
+ * folder) into its Image cell.
+ */
+function insertCoverImages() {
+  var covered = insertCoverImages_();
+  notify_('Added ' + covered + ' cover image' + (covered === 1 ? '' : 's') +
+    ' from the Assets folder.\n\nGames without a cover have a blank Image cell.');
+}
+
+/**
+ * Does the work for insertCoverImages(); returns the number of covers placed.
+ * The Image column is derived from Drive, so it's rewritten on every run:
+ * replaced covers are updated and removed ones cleared.
+ *
+ * Images go in as data URLs (Drive thumbnails), so they show for anyone who
+ * can see the sheet, without the Assets folder being shared.
+ */
+function insertCoverImages_() {
+  var sheet = getOrCreateSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { return 0; }
+  var header = getHeader_(sheet);
+  var ids = sheet.getRange(2, header.indexOf('FileId') + 1, lastRow - 1, 1).getValues();
+  var titles = sheet.getRange(2, header.indexOf('Title') + 1, lastRow - 1, 1).getValues();
+  var covers = getCoverIndex_(true);
+  var cache = CacheService.getScriptCache();
+
+  var covered = 0;
+  var cells = ids.map(function (row, r) {
+    var assetId = covers[String(row[0])];
+    if (!assetId) { return ['']; }
+    covered++;
+    return [SpreadsheetApp.newCellImage()
+      .setSourceUrl(coverDataUrl_(assetId, cache))
+      .setAltTextTitle(String(titles[r][0] || ''))
+      .build()];
+  });
+
+  var col = header.indexOf('Image') + 1;
+  var range = sheet.getRange(2, col, cells.length, 1);
+  range.clearContent(); // Drops the old "View cover" links' formatting too.
+  range.setValues(cells);
+  sheet.setColumnWidth(col, COVER_CELL_WIDTH);
+  sheet.setRowHeights(2, cells.length, COVER_ROW_HEIGHT);
+  return covered;
 }
 
 /** Shows a message in the spreadsheet UI when there is one, otherwise logs it. */
