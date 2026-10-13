@@ -99,6 +99,8 @@
       color: var(--muted);
     }
     .badge.console { color: var(--text); border-color: var(--accent); }
+    button.badge.console { font-family: inherit; line-height: inherit; }
+    button.badge.console:hover { filter: brightness(1.25); }
     .notes { color: var(--muted); font-size: 13px; }
     .byline { color: var(--muted); font-size: 13px; margin-top: -4px; }
     .card h3 button { all: unset; cursor: pointer; }
@@ -201,6 +203,13 @@
       font-size: 14px;
     }
     .download:hover { filter: brightness(1.08); }
+    .help { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+    .help details { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+    .help summary { cursor: pointer; }
+    .help code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; color: var(--text); white-space: nowrap; }
+    .help table { border-collapse: collapse; margin: 6px 0; }
+    .help td { padding: 3px 12px 3px 0; vertical-align: top; }
+    .help p { margin: 6px 0; }
     .state { color: var(--muted); padding: 40px 0; text-align: center; }
     .error { color: #ff8a8a; }
     a.plain { color: var(--accent); }
@@ -213,7 +222,7 @@
       <span class="count" id="count"></span>
     </div>
     <div class="controls">
-      <input type="search" id="search" placeholder="Search titles, developers, people…" autocomplete="off">
+      <input type="search" id="search" placeholder="Search… (try c:gba year<2000 g:platform)" autocomplete="off">
       <select id="console"><option value="">All consoles</option></select>
       <select id="sort">
         <option value="title">Sort: Title</option>
@@ -227,6 +236,32 @@
   </header>
 
   <main>
+    <div class="help">
+      <details>
+        <summary>Search syntax</summary>
+        <table>
+          <tr><td><code>mario kart</code></td><td>words in the title, file name, developer, publisher, genre or credits (all must match)</td></tr>
+          <tr><td><code>"super mario"</code></td><td>an exact phrase</td></tr>
+          <tr><td><code>-zelda</code></td><td>exclude a word (or any term below)</td></tr>
+          <tr><td><code>t:mario</code> <code>t:"of the"</code></td><td>title only (also <code>title:</code>)</td></tr>
+          <tr><td><code>c:gba</code> <code>c:snes</code> <code>c:sega</code> <code>c="game boy"</code></td><td>console (also <code>console:</code>). Short names match that console exactly (<code>gb</code> <code>gbc</code> <code>gba</code> <code>nes</code> <code>snes</code> <code>n64</code> <code>gc</code> <code>ds</code> <code>md</code> <code>psx</code> …); other text matches part of the name; <code>c=</code> is the whole name. <code>c:none</code> has no console set</td></tr>
+          <tr><td><code>dev:nintendo</code> <code>pub:capcom</code></td><td>developer (also <code>developer:</code>) or publisher (also <code>publisher:</code>)</td></tr>
+          <tr><td><code>by:konami</code></td><td>developer or publisher</td></tr>
+          <tr><td><code>a:miyamoto</code> <code>a:"koji kondo"</code></td><td>credits: people and roles (also <code>credits:</code>)</td></tr>
+          <tr><td><code>g:platform</code> <code>g:rpg</code></td><td>genre (also <code>genre:</code>; <code>rpg</code> means role-playing)</td></tr>
+          <tr><td><code>d:dungeon</code></td><td>description (also <code>desc:</code>)</td></tr>
+          <tr><td><code>notes:beta</code></td><td>notes</td></tr>
+          <tr><td><code>f:usa</code> <code>ext:gbc</code></td><td>file name (also <code>file:</code>); file extension</td></tr>
+          <tr><td><code>year:1996</code> <code>year&lt;2000</code> <code>date&gt;=1995-06</code></td><td>release year or date (also <code>y:</code> <code>released:</code>; <code>=</code> <code>&lt;</code> <code>&gt;</code> <code>&lt;=</code> <code>&gt;=</code>). <code>year:199</code> is the 1990s</td></tr>
+          <tr><td><code>added&gt;=2026-09</code></td><td>date added to the library</td></tr>
+          <tr><td><code>p:2</code> <code>p&gt;=3</code> <code>p=1</code></td><td>players (also <code>players:</code>): <code>p:2</code> supports two players; comparisons use the most players</td></tr>
+          <tr><td><code>size&lt;1mb</code> <code>size&gt;=32m</code></td><td>download size (<code>kb</code> <code>mb</code> <code>gb</code>; a bare number is MB)</td></tr>
+          <tr><td><code>has:cover</code> <code>has:credits</code> <code>has:notes</code></td><td>has a cover, credits, notes, description (<code>has:desc</code>) or console; <code>has:info</code> has any game info</td></tr>
+          <tr><td><code>c:gba or c:gbc</code> <code>(c:nes or c:snes) dev:nintendo</code></td><td>either side matches; parentheses group terms</td></tr>
+        </table>
+        <p>Terms are case-insensitive. A game missing a value (no release date, say) never matches a term on it: <code>year&lt;2000</code> leaves out undated games, and <code>-year&lt;2000</code> keeps them. Keys: <code>/</code> search, <code>Esc</code> close.</p>
+      </details>
+    </div>
     <div id="state" class="state">Loading library…</div>
     <div class="grid" id="grid"></div>
   </main>
@@ -275,7 +310,9 @@
       var style = 'color:hsl(' + h + ',70%,74%);' +
         'border-color:hsl(' + h + ',60%,52%);' +
         'background:hsla(' + h + ',65%,50%,0.16)';
-      return '<span class="badge console" style="' + style + '">' + escapeHtml(name) + '</span>';
+      return '<button type="button" class="badge console" style="' + style + '" data-console="' +
+        escapeHtml(name) + '" title="Add ' + escapeHtml(consoleTerm(name)) + ' to the search">' +
+        escapeHtml(name) + '</button>';
     }
 
     // Convert a human-readable size ("1.2 MB") back to a byte count for sorting.
@@ -320,14 +357,14 @@
     }
 
     function render() {
-      var q = document.getElementById('search').value.trim().toLowerCase();
+      var query = parseQuery(document.getElementById('search').value);
       var con = document.getElementById('console').value;
       var grid = document.getElementById('grid');
       var state = document.getElementById('state');
 
       var rows = ALL.filter(function (g) {
         if (con && g.console !== con) return false;
-        if (q && searchText(g).indexOf(q) === -1) return false;
+        if (!matches(g, query)) return false;
         return true;
       });
 
@@ -383,6 +420,206 @@
     function searchText(g) {
       return [g.title, g.fileName, g.developer, g.publisher, g.genre, g.credits]
         .join(' ').toLowerCase();
+    }
+
+    // ----- Search syntax (Scryfall-style; see the "Search syntax" help) -------
+
+    // Splits a query into terms ({neg, key, op, val}), parens and "or".
+    // A key with no value yet (mid-typing "c:") is dropped rather than
+    // matching nothing.
+    function tokenize(q) {
+      var re = /(-?)\(|\)|(-?)(?:(\w+)(:|>=|<=|>|<|=))?(?:"([^"]*)"?|([^\s()]*))/g;
+      var out = [], m;
+      while ((m = re.exec(q))) {
+        if (m[0] === '') { re.lastIndex++; continue; }
+        if (m[0].slice(-1) === '(' && m[5] === undefined && m[6] === undefined) {
+          out.push({ type: '(', neg: !!m[1] });
+        } else if (m[0] === ')') {
+          out.push({ type: ')' });
+        } else {
+          var quoted = m[5] !== undefined;
+          var val = (quoted ? m[5] : m[6] || '').toLowerCase();
+          var key = (m[3] || '').toLowerCase();
+          if (!key && !quoted && !m[2] && (val === 'or' || val === 'and')) {
+            if (val === 'or') { out.push({ type: 'or' }); }
+          } else if (val !== '') {
+            out.push({ type: 'term', neg: !!m[2], key: key, op: m[4] || '', val: val });
+          }
+        }
+      }
+      return out;
+    }
+
+    // Terms side by side must all match; "or" binds looser, and parens group.
+    // Unbalanced parens are forgiven so a half-typed query still filters.
+    function parseQuery(q) {
+      var toks = tokenize(q), pos = 0;
+      function parseOr() {
+        var parts = [parseAnd()];
+        while (pos < toks.length && toks[pos].type === 'or') {
+          pos++;
+          parts.push(parseAnd());
+        }
+        // A dangling "or" (mid-typing "c:gba or ") shouldn't match everything.
+        parts = parts.filter(function (p) { return p.and.length > 0; });
+        return parts.length === 1 ? parts[0] : { or: parts };
+      }
+      function parseAnd() {
+        var parts = [];
+        while (pos < toks.length && toks[pos].type !== 'or' && toks[pos].type !== ')') {
+          var t = toks[pos++];
+          if (t.type === '(') {
+            var inner = parseOr();
+            if (pos < toks.length && toks[pos].type === ')') { pos++; }
+            parts.push({ neg: t.neg, node: inner });
+          } else {
+            parts.push({ neg: t.neg, term: t });
+          }
+        }
+        return { and: parts };
+      }
+      var top = [];
+      while (pos < toks.length) {
+        top.push({ neg: false, node: parseOr() });
+        if (pos < toks.length) { pos++; }  // stray ")" or "or"
+      }
+      return { and: top };
+    }
+
+    function matches(g, node) {
+      if (node.or) {
+        return node.or.length === 0 || node.or.some(function (n) { return matches(g, n); });
+      }
+      return node.and.every(function (p) {
+        return (p.node ? matches(g, p.node) : testTerm(g, p.term)) !== p.neg;
+      });
+    }
+
+    function compare(a, op, b) {
+      return op === '>' ? a > b : op === '<' ? a < b : op === '>=' ? a >= b
+        : op === '<=' ? a <= b : a === b;
+    }
+
+    // Short names that pick out one console exactly (so c:gb isn't also Game Boy Color).
+    var CONSOLE_ALIASES = {
+      gb: 'Game Boy', gbc: 'Game Boy Color', gba: 'Game Boy Advance',
+      ds: 'Nintendo DS', nds: 'Nintendo DS', '3ds': 'Nintendo 3DS',
+      nes: 'NES', famicom: 'NES', fds: 'Famicom Disk System', snes: 'SNES', sfc: 'SNES',
+      n64: 'Nintendo 64', gc: 'GameCube', gcn: 'GameCube', wii: 'Wii',
+      sms: 'Sega Master System', gg: 'Game Gear', genesis: 'Sega Genesis', md: 'Sega Genesis',
+      megadrive: 'Sega Genesis', '32x': 'Sega 32X', dc: 'Sega Dreamcast', dreamcast: 'Sega Dreamcast',
+      psx: 'PlayStation', ps1: 'PlayStation', ps: 'PlayStation', psp: 'PSP',
+      2600: 'Atari 2600', 7800: 'Atari 7800', lynx: 'Atari Lynx',
+      ngp: 'Neo Geo Pocket', ngpc: 'Neo Geo Pocket Color',
+      pce: 'TurboGrafx-16', tg16: 'TurboGrafx-16', ws: 'WonderSwan', wsc: 'WonderSwan Color'
+    };
+    var GENRE_ALIASES = { rpg: 'role-playing', shmup: 'shooter' };
+
+    // ':' is "contains"; '=' is the whole value.
+    function textTest(field, t, val) {
+      var f = String(field || '').toLowerCase();
+      val = val || t.val;
+      return t.op === '=' ? f === val : f.indexOf(val) >= 0;
+    }
+
+    // Dates are compared as strings cut to the query's length, so year:1996,
+    // date>=1995-06 and year:199 (the 1990s) all work on YYYY[-MM[-DD]] values.
+    function dateTest(date, t) {
+      if (!date || !/^[\d-]+$/.test(t.val)) { return false; }
+      return compare(date.slice(0, t.val.length), t.op === ':' ? '=' : t.op, t.val);
+    }
+
+    function isoDate(ms) {
+      if (!ms) { return ''; }
+      var d = new Date(ms);
+      function pad(n) { return (n < 10 ? '0' : '') + n; }
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+
+    // Players are like "1", "1–4" or "1–2 (alternating)". p:N means N can play;
+    // comparisons use the most players.
+    function playersTest(g, t) {
+      var nums = (g.players.match(/\d+/g) || []).map(Number);
+      var n = parseInt(t.val, 10);
+      if (!nums.length || isNaN(n)) { return false; }
+      var min = Math.min.apply(null, nums), max = Math.max.apply(null, nums);
+      return t.op === ':' ? min <= n && n <= max : compare(max, t.op, n);
+    }
+
+    // "512k", "1.5mb", "2g", "100b"; a bare number is megabytes.
+    function sizeTest(g, t) {
+      var m = /^([\d.]+)([kmg]?)(b?)$/.exec(t.val);
+      var have = parseSize(g.size);
+      if (!m || have < 0) { return false; }
+      var unit = m[2] ? SIZE_UNITS[m[2].toUpperCase() + 'B'] : (m[3] ? 0 : 2);
+      var want = parseFloat(m[1]) * Math.pow(1024, unit);
+      return compare(have, t.op === ':' ? '<=' : t.op, want);
+    }
+
+    function hasTest(g, v) {
+      switch (v) {
+        case 'cover': case 'image': case 'art': return g.hasCover;
+        case 'console': return !!g.console;
+        case 'dev': case 'developer': return !!g.developer;
+        case 'pub': case 'publisher': return !!g.publisher;
+        case 'date': case 'year': case 'released': return !!g.releaseDate;
+        case 'genre': return !!g.genre;
+        case 'players': return !!g.players;
+        case 'credits': return !!g.credits;
+        case 'desc': case 'description': return !!g.description;
+        case 'notes': case 'note': return !!g.notes;
+        case 'info': return !!(g.developer || g.publisher || g.releaseDate || g.genre ||
+          g.players || g.credits || g.description);
+        default: return true;  // unknown (or half-typed) values don't filter
+      }
+    }
+
+    function testTerm(g, t) {
+      switch (t.key) {
+        case '': return searchText(g).indexOf(t.val) >= 0;
+        case 't': case 'title': return textTest(g.title || g.fileName, t);
+        case 'c': case 'console':
+          if (t.val === 'none' || t.val === 'unknown') { return !g.console; }
+          return CONSOLE_ALIASES.hasOwnProperty(t.val)
+            ? g.console.toLowerCase() === CONSOLE_ALIASES[t.val].toLowerCase()
+            : textTest(g.console, t);
+        case 'dev': case 'developer': return textTest(g.developer, t);
+        case 'pub': case 'publisher': return textTest(g.publisher, t);
+        case 'by': return textTest(g.developer, t) || textTest(g.publisher, t);
+        case 'a': case 'credit': case 'credits': return textTest(g.credits, t);
+        case 'g': case 'genre': return textTest(g.genre, t, GENRE_ALIASES[t.val]);
+        case 'd': case 'desc': case 'description': return textTest(g.description, t);
+        case 'notes': case 'note': return textTest(g.notes, t);
+        case 'f': case 'file': case 'filename': return textTest(g.fileName, t);
+        case 'ext': return g.fileName.toLowerCase().split('.').pop() === t.val.replace(/^\./, '');
+        case 'y': case 'year': case 'date': case 'released': return dateTest(g.releaseDate, t);
+        case 'added': return dateTest(isoDate(g.dateAdded), t);
+        case 'p': case 'players': return playersTest(g, t);
+        case 'size': return sizeTest(g, t);
+        case 'has': case 'is': return hasTest(g, t.val);
+        // Not a known key: treat "foo:bar" as plain text.
+        default: return searchText(g).indexOf(t.key + t.op + t.val) >= 0;
+      }
+    }
+
+    // The search term for one console: its first short name, else c="full name".
+    function consoleTerm(name) {
+      var lower = name.toLowerCase();
+      for (var k in CONSOLE_ALIASES) {
+        if (CONSOLE_ALIASES[k].toLowerCase() === lower) { return 'c:' + k; }
+      }
+      return /[\s"()]/.test(name) ? 'c="' + lower.replace(/"/g, '') + '"' : 'c=' + lower;
+    }
+
+    // Appends the console's term to the search (unless it's already there).
+    function addConsoleFilter(name) {
+      var box = document.getElementById('search');
+      var term = consoleTerm(name);
+      var q = box.value.trim();
+      if ((' ' + q + ' ').indexOf(' ' + term + ' ') < 0) {
+        box.value = q ? q + ' ' + term : term;
+      }
+      render();
     }
 
     function releaseYear(g) {
@@ -521,11 +758,19 @@
     }
 
     document.getElementById('grid').addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-console]');
+      if (chip) { addConsoleFilter(chip.getAttribute('data-console')); return; }
       var el = e.target.closest('[data-details]');
       if (el) { showDetails(el.getAttribute('data-details')); }
     });
     // Clicking the backdrop (the dialog element itself, outside its content) closes it.
     document.getElementById('details').addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-console]');
+      if (chip) {
+        addConsoleFilter(chip.getAttribute('data-console'));
+        closeDetails();
+        return;
+      }
       if (e.target === this) { closeDetails(); }
     });
     // Esc closes the dialog instantly by default; animate it instead.
@@ -534,6 +779,14 @@
       closeDetails();
     });
     document.getElementById('search').addEventListener('input', render);
+    // "/" jumps to the search box from anywhere but a text field.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) { return; }
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') { return; }
+      e.preventDefault();
+      document.getElementById('search').focus();
+    });
     document.getElementById('console').addEventListener('change', render);
     document.getElementById('sort').addEventListener('change', render);
     document.getElementById('dir').addEventListener('click', function () {
