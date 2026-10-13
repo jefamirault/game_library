@@ -8,6 +8,7 @@ A Google Apps Script (GAS) web app, managed locally with **clasp**, that serves 
 
 Key IDs (see `src/Code.gs` and `.clasp.json`):
 - **ROMs Drive folder:** `1J2_2qBnPibevdMs2LwPFAxTE9Kl2tB_F` (`ROMS_FOLDER_ID`)
+- **Cover art Drive folder:** `1x1MXKl6JNQn2HJeHpSpkmWCQ060ZS2ZP` (`ASSETS_FOLDER_ID`, an `Assets` subfolder of the ROMs folder)
 - **Database spreadsheet / script parent:** `1qWhIB1XEXekPt--cZy2YXltgQ7vhBu1Cdh2O_tIYcHE`
 
 ## Commands
@@ -32,6 +33,7 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers:
 2. **`Code.gs` — config, sheet access, web app entry points.**
    - `COLUMNS` is the single source of truth for the sheet schema. Code reads/writes columns **by header label**, not by index, so the header row (row 1 of the `Games` sheet) must stay intact. Reorder columns only by editing `COLUMNS`.
    - `doGet()` serves `index.html`; `getGames()` is the client-callable bridge (`google.script.run`) returning game objects plus a Drive download URL.
+   - `getCovers(romIds)` serves cover art from `ASSETS_FOLDER_ID` as data URLs (Drive thumbnails, cached in `CacheService`). Covers are named `<ROM FileId>.png`. It takes ROM ids, never raw Drive ids, so an anonymous caller can't read arbitrary files as the owner.
    - `onOpen()` adds a **Game Library** spreadsheet menu (run setup, show web app URL).
 
 3. **`index.html` — the browse/download UI.** Pure client-side rendering of the `getGames()` result with title/filename search and a per-console filter. Console badges are color-coded by `consoleHue()` (iconic hues for known platforms in `CONSOLE_HUES`, a stable name-hash hue otherwise).
@@ -41,4 +43,5 @@ Source lives in `src/` (set by `rootDir` in `.clasp.json`). Three layers:
 - **Updating the web app requires a redeploy.** `clasp push` alone does not change what the `/exec` URL serves — the deployment is pinned to a version. Use `clasp redeploy <id>` to keep the same shared URL.
 - **`/exec` vs `/dev` URLs.** Only `/exec` is shareable; `/dev` works for owner/editors only. URLs containing `/u/N/`, `?authuser=`, or `/a/macros/<domain>/` break for other users.
 - **Download links go straight to Drive** (`https://drive.google.com/uc?export=download&id=<fileId>`). The web app runs as the deploying user (`executeAs: USER_DEPLOYING`) so the *listing* needs no per-viewer access, but **downloads still require each viewer to have Drive access to the files** — share the ROMs folder accordingly. Web app access is `ANYONE_ANONYMOUS` (see `src/appsscript.json`).
+- **Covers are proxied through the app, not linked.** The Assets folder isn't public, so `index.html` loads covers in batches via `getCovers()` rather than using Drive image URLs. The local `images/` folder (gitignored) is the source copy; `images/sources.tsv` records which libretro-thumbnails box art each came from. `setupDatabase()` ignores the Assets folder's files because `isLikelyRom_` filters by extension.
 - **Scopes** are declared in `src/appsscript.json` (`spreadsheets`, `drive.readonly`, `script.container.ui`). The first menu run triggers the OAuth consent prompt.

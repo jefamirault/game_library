@@ -66,6 +66,28 @@
       flex-direction: column;
       gap: 8px;
     }
+    .cover {
+      height: 180px;
+      margin: -14px -15px 2px;
+      border-radius: 12px 12px 0 0;
+      background: var(--panel-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .cover img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .cover.none { color: var(--muted); font-size: 12px; }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
     .card h3 { margin: 0; font-size: 15px; line-height: 1.3; word-break: break-word; }
     .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .badge {
@@ -123,6 +145,8 @@
   <script>
     var ALL = [];
     var dirAsc = true;
+    var COVERS = {};         // ROM file id → image data URL (null if it failed), filled in as batches arrive
+    var COVER_BATCH = 8;     // covers per server call
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -235,6 +259,7 @@
         var notes = g.notes ? '<div class="notes">' + escapeHtml(g.notes) + '</div>' : '';
         return '' +
           '<div class="card">' +
+            coverHtml(g) +
             '<h3>' + escapeHtml(g.title || g.fileName) + '</h3>' +
             '<div class="meta">' + consoleBadge + sizeBadge + '</div>' +
             notes +
@@ -242,6 +267,50 @@
             '<a class="download" href="' + escapeHtml(g.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
           '</div>';
       }).join('');
+    }
+
+    function coverHtml(g) {
+      if (!g.hasCover) {
+        return '<div class="cover none">No cover</div>';
+      }
+      var src = COVERS[g.fileId];
+      if (src === null) {
+        return '<div class="cover none">Cover unavailable</div>';
+      }
+      return '<div class="cover" data-cover="' + escapeHtml(g.fileId) + '">' +
+        (src ? '<img src="' + src + '" alt="" loading="lazy">' : '<div class="spinner"></div>') + '</div>';
+    }
+
+    // Fetch every cover in small batches, filling in cards already on screen as
+    // each batch arrives. Later re-renders (search/sort) reuse COVERS.
+    function loadCovers() {
+      var ids = ALL.filter(function (g) { return g.hasCover; })
+        .map(function (g) { return g.fileId; });
+      for (var i = 0; i < ids.length; i += COVER_BATCH) {
+        var chunk = ids.slice(i, i + COVER_BATCH);
+        google.script.run
+          .withSuccessHandler(function (batch, chunk) { onCovers(chunk, batch || {}); })
+          .withFailureHandler(function (err, chunk) { onCovers(chunk, {}); })
+          .withUserObject(chunk)
+          .getCovers(chunk);
+      }
+    }
+
+    // Swap each card's spinner for its image. Ids the server didn't return are
+    // marked null so the spinner doesn't spin forever.
+    function onCovers(ids, batch) {
+      ids.forEach(function (id) {
+        var src = batch[id] || null;
+        COVERS[id] = src;
+        var el = document.querySelector('[data-cover="' + CSS.escape(id) + '"]');
+        if (!el) { return; }
+        if (src) {
+          el.innerHTML = '<img src="' + src + '" alt="">';
+        } else {
+          el.className = 'cover none';
+          el.textContent = 'Cover unavailable';
+        }
+      });
     }
 
     function populateConsoles() {
@@ -259,6 +328,7 @@
       ALL = games || [];
       populateConsoles();
       render();
+      loadCovers();
     }
 
     function onError(err) {
