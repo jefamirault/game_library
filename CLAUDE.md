@@ -15,6 +15,7 @@ Key IDs (see `src/Code.gs` and `.clasp.json`):
 
 The user runs all `clasp push` / deploy commands themselves — **do not run them.** Provide the exact command and wait. Suggest running them in-session with the `!` prefix (e.g. `! clasp push -f`).
 
+- **Deploy (push + update the live web app + stamp):** `./deploy.sh`. Writes `src/DeployStamp.gs` (gitignored), runs `clasp push -f`, then `clasp redeploy` on the live deployment. The stamp is the same `deploy.json` shape as the static sites, served at `<exec URL>/deploy.json` via `doGet`'s `pathInfo`.
 - **Push code to Apps Script:** `clasp push -f`
 - **List deployments:** `clasp list-deployments`
 - **Update the live web app (keeps the same `/exec` URL):** `clasp redeploy <deploymentId>`

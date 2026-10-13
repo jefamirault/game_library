@@ -71,13 +71,28 @@ function showWebAppUrl() {
 
 // ----- Web app ---------------------------------------------------------------
 
-/** Serves the browse/download UI. */
-function doGet() {
+/**
+ * Serves the browse/download UI, or the deploy stamp at <exec URL>/deploy.json.
+ */
+function doGet(e) {
+  if (e && e.pathInfo === 'deploy.json') {
+    return deployStamp_();
+  }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
     .setTitle('Game Library')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * The deploy stamp written by deploy.sh (src/DeployStamp.gs, not committed), as
+ * JSON. Empty object if the code was pushed without deploy.sh.
+ */
+function deployStamp_() {
+  var stamp = typeof DEPLOY_STAMP === 'undefined' ? {} : DEPLOY_STAMP;
+  return ContentService.createTextOutput(JSON.stringify(stamp))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Lets index.html pull in shared HTML/CSS/JS partials via templating. */
